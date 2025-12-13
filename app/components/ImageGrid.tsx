@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { AnimatePresence } from 'framer-motion';
 import type { Image, GridSize } from '../types';
@@ -13,6 +13,7 @@ interface ImageGridProps {
   selectedImageIds: Set<number>;
   onToggleSelection: (id: number) => void;
   onImageClick: (img: Image) => void;
+  onToggleLiked: (id: number) => void;
   loadMoreRef: (node?: Element | null) => void;
 }
 
@@ -25,6 +26,7 @@ export function ImageGrid({
   selectedImageIds,
   onToggleSelection,
   onImageClick,
+  onToggleLiked,
   loadMoreRef,
 }: ImageGridProps) {
   const getGridClasses = () => {
@@ -43,7 +45,7 @@ export function ImageGrid({
     <>
       {/* Loading Initial (Skeleton) */}
       {isLoading && images.length === 0 ? (
-        <div className={`grid ${getGridClasses()} auto-rows-min grid-flow-dense`}>
+        <div className={`w-full px-2 md:px-12 2xl:max-w-[1800px] grid ${getGridClasses()} auto-rows-min grid-flow-dense`}>
           {Array.from({ length: 18 }).map((_, i) => (
             <div
               key={i}
@@ -54,7 +56,7 @@ export function ImageGrid({
           ))}
         </div>
       ) : (
-        <div className={`grid ${getGridClasses()} auto-rows-min grid-flow-dense`}>
+        <div className={`w-full px-2 md:px-12 2xl:max-w-[1800px] grid ${getGridClasses()} auto-rows-min grid-flow-dense`}>
           <AnimatePresence mode="popLayout">
             {images.map((img) => (
               <ImageCard
@@ -64,6 +66,7 @@ export function ImageGrid({
                 isSelected={selectedImageIds.has(img.id)}
                 onToggleSelection={onToggleSelection}
                 onImageClick={onImageClick}
+                onToggleLiked={onToggleLiked}
                 gridSize={gridSize}
               />
             ))}

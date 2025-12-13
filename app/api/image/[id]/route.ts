@@ -12,6 +12,7 @@ import {
   writeCache,
   CACHE_MAX_AGE,
   THUMBNAIL_QUALITY,
+  windowsToWslPath,
 } from '@/app/lib';
 
 export async function GET(
@@ -26,39 +27,41 @@ export async function GET(
     return errorResponse('Missing id', 400);
   }
 
-  // 1. 快速查库（同步操作）
-  let filepath: string | undefined;
-
+  // 1. 查库
+  let dbFilepath: string | undefined;
   try {
     const row = withDatabaseSync((db) => {
       return db.prepare('SELECT filepath FROM images WHERE id = ?').get(id) as
         | { filepath: string }
         | undefined;
     }, true);
-
-    filepath = row?.filepath;
+    dbFilepath = row?.filepath;
   } catch (e) {
     console.error('DB Error:', e);
     return errorResponse('Database Error', 500);
   }
 
-  if (!filepath) {
+  if (!dbFilepath) {
     return errorResponse('Image not found in DB', 404);
   }
 
-  if (!fs.existsSync(filepath)) {
+  // 将 Windows 路径转换为 WSL 路径
+  const finalPath = windowsToWslPath(dbFilepath);
+
+  // 检查文件是否存在
+  if (!fs.existsSync(finalPath)) {
+    console.error(`文件不存在: ${finalPath}`);
     return errorResponse('File missing on disk', 404);
   }
 
-  // 2. 处理缩略图（带缓存）
+  // 缩略图处理
   if (widthParam) {
     const width = parseInt(widthParam, 10);
     if (!isNaN(width) && width > 0) {
       try {
         ensureCacheDir();
-        const cachePath = getCachePath(filepath, width);
+        const cachePath = getCachePath(finalPath, width); // 用找到的 finalPath
 
-        // 命中缓存
         if (cacheExists(cachePath)) {
           const cacheBuffer = readCache(cachePath);
           return new NextResponse(new Uint8Array(cacheBuffer), {
@@ -70,8 +73,7 @@ export async function GET(
           });
         }
 
-        // 未命中：生成并写入缓存
-        const fileBuffer = fs.readFileSync(filepath);
+        const fileBuffer = fs.readFileSync(finalPath);
         const resizedBuffer = await sharp(fileBuffer)
           .resize(width)
           .jpeg({ quality: THUMBNAIL_QUALITY })
@@ -93,13 +95,10 @@ export async function GET(
     }
   }
 
-  // 3. 返回原图（流式传输）
   try {
-    const stats = fs.statSync(filepath);
-    const stream = fs.createReadStream(filepath);
-
-    // MIME 类型推断
-    const ext = path.extname(filepath).toLowerCase();
+    const stats = fs.statSync(finalPath);
+    const stream = fs.createReadStream(finalPath);
+    const ext = path.extname(finalPath).toLowerCase();
     let contentType = 'application/octet-stream';
     if (['.jpg', '.jpeg'].includes(ext)) contentType = 'image/jpeg';
     else if (ext === '.png') contentType = 'image/png';

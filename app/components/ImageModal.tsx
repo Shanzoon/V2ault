@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { toast } from 'sonner';
-import { X, Download, Edit2, Save, Trash2, Copy, Layers, Box, Tag } from 'lucide-react';
-import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
+import { X, Download, Edit2, Save, Trash2, Copy, Layers, Box, Tag, Heart } from 'lucide-react';
+import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import 'swiper/css';
 import type { Image } from '../types';
@@ -17,6 +17,7 @@ interface ImageModalProps {
   setSelectedImage: (img: Image | null) => void;
   onDelete: () => void;
   onUpdateImage: (img: Image) => void;
+  onToggleLiked?: (id: number) => void;
 }
 
 export function ImageModal({
@@ -27,18 +28,22 @@ export function ImageModal({
   setSelectedImage,
   onDelete,
   onUpdateImage,
+  onToggleLiked,
 }: ImageModalProps) {
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editPromptValue, setEditPromptValue] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isMobileDetailOpen, setIsMobileDetailOpen] = useState(false);
   const [slideDirection, setSlideDirection] = useState(0);
+  const [isZoomed, setIsZoomed] = useState(false);
+  const transformRef = useRef<ReactZoomPanPinchRef>(null);
   const dragControls = useDragControls();
 
   // Reset edit state when image selection changes
   useEffect(() => {
     setIsEditingPrompt(false);
     setEditPromptValue('');
+    setIsZoomed(false);
     if (selectedImage) {
       setEditPromptValue(selectedImage.prompt || '');
     }
@@ -298,17 +303,38 @@ export function ImageModal({
         }`}
       >
         {/* Left/Middle: Image Display Area */}
-        <div
-          className={`relative flex items-center justify-center overflow-hidden transition-all duration-300 ${
-            isFullscreen ? 'w-full h-screen' : 'w-full md:w-auto h-[85vh] md:h-full md:flex-1'
-          }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (window.innerWidth >= 768 && !isFullscreen) setIsFullscreen(true);
-          }}
-        >
+        {/* Left/Middle: Image Display Area */}
+<div
+  className={`relative flex items-center justify-center overflow-hidden ${
+    isFullscreen ? 'w-full h-screen' : 'w-full md:w-auto h-[85vh] md:h-full md:flex-1'
+  }`}
+  onClick={(e) => {
+    e.stopPropagation();
+    if (isFullscreen) {
+      setIsFullscreen(false);
+      setIsZoomed(false);
+    } else {
+      setSelectedImage(null);
+    }
+  }}
+>
+
+          {isFullscreen && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsFullscreen(false);
+                setIsZoomed(false);
+              }}
+              className="absolute top-6 right-6 z-50 p-3 bg-black/50 text-white rounded-full hover:bg-black/70 backdrop-blur-sm transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          )}
+
           {isFullscreen ? (
             <TransformWrapper
+              ref={transformRef}
               initialScale={1}
               minScale={0.5}
               maxScale={8}
@@ -321,10 +347,15 @@ export function ImageModal({
                 <img
                   src={`/api/image/${selectedImage.id}`}
                   alt={selectedImage.filename}
-                  className="w-full h-full object-contain cursor-zoom-out"
+                  className={`w-full h-full object-contain ${isZoomed ? 'cursor-zoom-out' : 'cursor-zoom-in'}`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setIsFullscreen(false);
+                    if (isZoomed) {
+                      transformRef.current?.resetTransform();
+                    } else {
+                      transformRef.current?.zoomIn(1);
+                    }
+                    setIsZoomed(!isZoomed);
                   }}
                 />
               </TransformComponent>
@@ -353,6 +384,10 @@ export function ImageModal({
                   src={`/api/image/${selectedImage.id}`}
                   alt={selectedImage.filename}
                   className="max-w-full max-h-full object-contain shadow-2xl drop-shadow-2xl md:cursor-zoom-in pointer-events-auto"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsFullscreen(true);
+                  }}
                 />
               </motion.div>
             </AnimatePresence>
@@ -437,7 +472,7 @@ export function ImageModal({
                       <textarea
                         value={editPromptValue}
                         onChange={(e) => setEditPromptValue(e.target.value)}
-                        className="w-full h-32 bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none resize-none custom-scrollbar"
+                        className="w-full min-h-[160px] bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none resize-none custom-scrollbar"
                       />
                       <div className="flex justify-end gap-2">
                         <button
@@ -462,7 +497,7 @@ export function ImageModal({
                       </div>
                     </div>
                   ) : (
-                    <div className="w-full h-24 bg-black/20 border border-transparent hover:border-white/5 rounded-lg p-3 overflow-y-auto custom-scrollbar group transition-colors cursor-default">
+                    <div className="w-full min-h-[120px] max-h-[200px] bg-black/20 border border-transparent hover:border-white/5 rounded-lg p-3 overflow-y-auto custom-scrollbar group transition-colors cursor-default">
                       <p className="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap group-hover:text-gray-300 transition-colors">
                         {selectedImage.prompt}
                       </p>
@@ -504,19 +539,42 @@ export function ImageModal({
               </div>
 
               {/* Footer: Actions */}
-              <div className="pt-6 mt-2 space-y-3 border-t border-white/5">
+              <div className="pt-6 mt-2 flex items-center gap-2 border-t border-white/5">
+                {/* Like Button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleLiked?.(selectedImage.id);
+                  }}
+                  className={`p-3 rounded-lg transition-colors border ${
+                    selectedImage.like_count && selectedImage.like_count > 0
+                      ? 'bg-red-500/10 border-red-500/20 text-red-500'
+                      : 'bg-white/5 border-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                  }`}
+                  title={selectedImage.like_count && selectedImage.like_count > 0 ? 'Unlike' : 'Like'}
+                >
+                  <Heart
+                    className={`w-4 h-4 ${
+                      selectedImage.like_count && selectedImage.like_count > 0 ? 'fill-current' : ''
+                    }`}
+                  />
+                </button>
+
+                {/* Download Button */}
                 <a
                   href={`/api/image/${selectedImage.id}`}
                   download={selectedImage.filename}
-                  className="w-full flex items-center justify-center gap-2 bg-white text-black py-3 rounded-lg text-sm font-bold hover:bg-gray-200 transition-colors shadow-[0_0_15px_rgba(255,255,255,0.1)]"
+                  className="flex-1 flex items-center justify-center gap-2 bg-white text-black py-3 rounded-lg text-sm font-bold hover:bg-gray-200 transition-colors shadow-[0_0_15px_rgba(255,255,255,0.1)]"
                 >
                   <Download className="w-4 h-4" /> Download Asset
                 </a>
+
+                {/* Delete Button */}
                 <button
                   onClick={onDelete}
-                  className="w-full flex items-center justify-center gap-2 bg-transparent text-red-500/80 hover:text-red-400 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-red-500/10"
+                  className="flex-1 flex items-center justify-center gap-2 bg-transparent text-red-500/80 hover:text-red-400 py-3 rounded-lg text-sm font-medium transition-colors hover:bg-red-500/10 border border-red-500/20"
                 >
-                  <Trash2 className="w-3.5 h-3.5" /> Delete from Vault
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
                 </button>
               </div>
             </div>

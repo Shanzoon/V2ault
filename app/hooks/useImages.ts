@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useInView } from 'react-intersection-observer';
@@ -24,6 +24,7 @@ export function useImages(options: UseImagesOptions = {}) {
   const [sortMode, setSortMode] = useState<SortMode>('random_shuffle');
   const [randomSeed, setRandomSeed] = useState<number | null>(null);
   const [selectedResolutions, setSelectedResolutions] = useState<string[]>([]);
+  const [likedOnly, setLikedOnly] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -47,7 +48,7 @@ export function useImages(options: UseImagesOptions = {}) {
   // Listen for filter changes
   useEffect(() => {
     resetGallery();
-  }, [debouncedSearch, selectedResolutions, sortMode, randomSeed, resetGallery]);
+  }, [debouncedSearch, selectedResolutions, sortMode, randomSeed, likedOnly, resetGallery]);
 
   // Fetch Logic
   const fetchImages = useCallback(async () => {
@@ -65,8 +66,9 @@ export function useImages(options: UseImagesOptions = {}) {
     try {
       const resolutionsParam = selectedResolutions.length > 0 ? `&resolutions=${selectedResolutions.join(',')}` : '';
       const seedParam = sortMode.startsWith('random') && randomSeed !== null ? `&seed=${randomSeed}` : '';
+      const likedParam = likedOnly ? '&liked=true' : '';
 
-      const url = `/api/images/list?page=${page}&limit=${limit}&search=${encodeURIComponent(debouncedSearch)}&sort=${sortMode}${resolutionsParam}${seedParam}`;
+      const url = `/api/images/list?page=${page}&limit=${limit}&search=${encodeURIComponent(debouncedSearch)}&sort=${sortMode}${resolutionsParam}${seedParam}${likedParam}`;
 
       const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) throw new Error('Failed to fetch');
@@ -96,7 +98,7 @@ export function useImages(options: UseImagesOptions = {}) {
         setIsLoading(false);
       }
     }
-  }, [page, debouncedSearch, sortMode, selectedResolutions, randomSeed, hasMore, limit]);
+  }, [page, debouncedSearch, sortMode, selectedResolutions, randomSeed, hasMore, limit, likedOnly]);
 
   // Trigger fetch
   useEffect(() => {
@@ -134,6 +136,40 @@ export function useImages(options: UseImagesOptions = {}) {
     setImages(prev => prev.filter(img => !ids.has(img.id)));
   }, []);
 
+  const toggleLiked = useCallback(async (id: number) => {
+    // Optimistic update
+    setImages(prev => prev.map(img => {
+      if (img.id === id) {
+        return { ...img, like_count: img.like_count && img.like_count > 0 ? 0 : 1 };
+      }
+      return img;
+    }));
+
+    try {
+      const res = await fetch(`/api/images/${id}/liked`, { method: 'PATCH' });
+      if (!res.ok) throw new Error('Failed to toggle liked');
+      const data = await res.json();
+      
+      // Sync with server response
+      setImages(prev => prev.map(img => {
+        if (img.id === id) {
+           return { ...img, like_count: data.liked ? 1 : 0 };
+        }
+        return img;
+      }));
+    } catch (error) {
+      console.error('Error toggling liked:', error);
+      // Revert optimistic update
+      setImages(prev => prev.map(img => {
+        if (img.id === id) {
+          // Flip back
+          return { ...img, like_count: img.like_count && img.like_count > 0 ? 0 : 1 };
+        }
+        return img;
+      }));
+    }
+  }, []);
+
   return {
     // Data
     images,
@@ -144,9 +180,12 @@ export function useImages(options: UseImagesOptions = {}) {
 
     // Search & Filter
     search,
+    debouncedSearch,
     setSearch,
     selectedResolutions,
     toggleResolution,
+    likedOnly,
+    setLikedOnly,
 
     // Sort
     sortMode,
@@ -159,6 +198,7 @@ export function useImages(options: UseImagesOptions = {}) {
     updateImage,
     removeImage,
     removeImages,
+    toggleLiked,
     refetch: fetchImages,
   };
 }

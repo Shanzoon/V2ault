@@ -1,8 +1,7 @@
-'use client';
+﻿'use client';
 
-import { useState, useCallback, useRef } from 'react';
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
+import { useState, useCallback, useRef, useEffect } from 'react';
+
 
 import type { Image, GridSize, DeleteConfirmation } from './types';
 import { useImages, useSelection, useKeyboardShortcuts } from './hooks';
@@ -23,16 +22,21 @@ export default function Home() {
     hasMore,
     loadMoreRef,
     search,
+    debouncedSearch,
     setSearch,
     selectedResolutions,
     toggleResolution,
+    likedOnly,
+    setLikedOnly,
     sortMode,
     setSortMode,
+    randomSeed,
     setRandomSeed,
     shuffleImages,
     updateImage,
     removeImage,
     removeImages,
+    toggleLiked,
   } = useImages();
 
   // Selection Hook
@@ -62,10 +66,20 @@ export default function Home() {
   // Refs
   const singleDeleteBtnRef = useRef<HTMLButtonElement>(null);
   const bulkDeleteBtnRef = useRef<HTMLButtonElement>(null);
+  const scrollContainerRef = useRef<HTMLElement>(null);
+
+  // Scroll to top effect
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [debouncedSearch, sortMode, randomSeed]);
 
   // Handlers
   const handleTitleClick = useCallback(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
     shuffleImages();
     setIsMobileMenuOpen(false);
   }, [shuffleImages]);
@@ -75,6 +89,8 @@ export default function Home() {
 
     try {
       setIsBulkDownloading(true);
+      const JSZip = (await import('jszip')).default;
+      const { saveAs } = await import('file-saver');
       const zip = new JSZip();
       const folder = zip.folder('images');
       const selectedImages = images.filter(img => selectedImageIds.has(img.id));
@@ -85,20 +101,22 @@ export default function Home() {
           const blob = await response.blob();
           folder?.file(img.filename, blob);
         } catch (err) {
-          console.error(`Failed to download ${img.filename}`, err);
+          console.error(`Failed to download ${img.filename}:`, err);
         }
       });
 
       await Promise.all(promises);
       const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, 'images.zip');
+      saveAs(content, 'v2ault-selection.zip');
     } catch (error) {
       console.error('Error creating zip:', error);
-      alert('Failed to download images');
+      alert('Failed to create download package');
     } finally {
       setIsBulkDownloading(false);
+      clearSelection();
+      setIsSelectionMode(false);
     }
-  }, [selectedImageIds, images]);
+  }, [selectedImageIds, images, clearSelection, setIsSelectionMode]);
 
   const handleBatchDelete = useCallback((e?: React.MouseEvent) => {
     if (selectedImageIds.size === 0) return;
@@ -186,6 +204,8 @@ export default function Home() {
         setSearch={setSearch}
         selectedResolutions={selectedResolutions}
         toggleResolution={toggleResolution}
+        likedOnly={likedOnly}
+        setLikedOnly={setLikedOnly}
         gridSize={gridSize}
         setGridSize={setGridSize}
         sortMode={sortMode}
@@ -204,7 +224,10 @@ export default function Home() {
       />
 
       {/* Main Content */}
-      <main className="flex-1 h-full overflow-y-auto relative bg-black p-4 md:p-10 lg:p-12 scrollbar-hide md:scrollbar-thin md:scrollbar-thumb-white/10 md:scrollbar-track-transparent pt-16 md:pt-10">
+      <main
+        ref={scrollContainerRef}
+        className="flex-1 h-full overflow-y-auto relative bg-black p-4 md:p-10 lg:p-12 scrollbar-hide md:scrollbar-thin md:scrollbar-thumb-white/10 md:scrollbar-track-transparent pt-16 md:pt-10"
+      >
         <div className="max-w-[2000px] mx-auto min-h-full pb-20">
           <ImageGrid
             images={images}
@@ -215,6 +238,7 @@ export default function Home() {
             selectedImageIds={selectedImageIds}
             onToggleSelection={toggleSelection}
             onImageClick={setSelectedImage}
+            onToggleLiked={toggleLiked}
             loadMoreRef={loadMoreRef}
           />
         </div>
@@ -229,6 +253,7 @@ export default function Home() {
         setSelectedImage={setSelectedImage}
         onDelete={handleSingleDelete}
         onUpdateImage={updateImage}
+        onToggleLiked={toggleLiked}
       />
 
       {/* Delete Confirmation Modal */}

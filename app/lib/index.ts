@@ -1,7 +1,12 @@
-// 常量
+// 常量和配置
 export {
+  IMAGE_DB_PATH,
   DB_PATH,
   CACHE_DIR,
+  IMAGE_ROOTS,
+  windowsToWslPath,
+  wslToWindowsPath,
+  normalizePath,
   RESOLUTION_THRESHOLDS,
   DEFAULT_PAGE_SIZE,
   THUMBNAIL_QUALITY,

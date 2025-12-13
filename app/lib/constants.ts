@@ -1,10 +1,13 @@
-import path from 'path';
+// 从 config.ts 导入路径配置
+export { IMAGE_DB_PATH, CACHE_DIR, IMAGE_ROOTS } from './config';
+export { windowsToWslPath, wslToWindowsPath, normalizePath } from './config';
 
-// 数据库路径
-export const DB_PATH = path.join(process.cwd(), 'images.db');
+// 兼容旧代码：DB_PATH 作为 IMAGE_DB_PATH 的别名
+export { IMAGE_DB_PATH as DB_PATH } from './config';
 
-// 缓存目录
-export const CACHE_DIR = path.join(process.cwd(), 'cache');
+// ============================================
+// 非路径相关的常量（保持不变）
+// ============================================
 
 // 分辨率阈值（像素面积）
 export const RESOLUTION_THRESHOLDS = {

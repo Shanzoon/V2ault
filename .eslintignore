@@ -1,0 +1,11 @@
+# 依赖
+node_modules/
+
+# 构建产物
+.next/
+out/
+build/
+dist/
+
+# 缓存
+cache/

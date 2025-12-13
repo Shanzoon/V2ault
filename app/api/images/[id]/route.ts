@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import fs from 'node:fs'; // 【新增】用于检测文件是否存在
+import path from 'node:path'; // 【新增】用于拼接路径
 import {
   withDatabase,
   errorResponse,
@@ -29,7 +31,39 @@ export async function DELETE(
         return { success: false, notFound: true };
       }
 
-      const filepath = row.filepath;
+      // 这是数据库里存的原始路径 (例如 H:\Development\...)
+      const originalFilepath = row.filepath;
+      console.log("数据库原始路径:", originalFilepath);
+
+      // ==================================================
+      // 【新增逻辑】自动寻找真实文件路径 (和你 GET 方法里的一样)
+      // ==================================================
+      let finalPath = '';
+      const filename = originalFilepath.split(/[/\\]/).pop(); // 提取文件名
+
+      // 定义搜索目录 (对应你建立的软连接)
+      const searchDirs = [
+        'public/images',   // H 盘
+        'public/comfy',    // F 盘
+        'public/desktop',  // D 盘
+      ];
+
+      // 遍历寻找
+      for (const dirName of searchDirs) {
+        const potentialPath = path.join(process.cwd(), dirName, filename || '');
+        if (fs.existsSync(potentialPath)) {
+          finalPath = potentialPath;
+          break; // 找到了就停止
+        }
+      }
+
+      if (finalPath) {
+        console.log("找到真实文件路径:", finalPath);
+      } else {
+        console.warn("警告: 硬盘上未找到该文件，将只删除数据库记录");
+      }
+      // ==================================================
+
 
       // 2. 事务删除数据库记录
       const deleteTransaction = db.transaction(() => {
@@ -41,8 +75,21 @@ export async function DELETE(
 
       if (deleted) {
         // 3. 清理磁盘文件
-        deleteSourceFile(filepath);
-        clearImageCache(filepath);
+        // 只有当 finalPath 存在 (真的找到了文件) 时才去删文件
+        if (finalPath) {
+            try {
+                // 这里的 deleteSourceFile 可能会报错，如果它内部也是用的 fs.unlink
+                // 我们直接传入找到的 Linux 路径
+                deleteSourceFile(finalPath);
+            } catch (e) {
+                console.error("删除物理文件失败 (可能文件已被占用或不存在):", e);
+            }
+        }
+        
+        // 清理缓存 (传入最终路径，确保能找到对应的缓存文件)
+        // 如果没找到文件，就尝试用原始路径清理，尽人事听天命
+        clearImageCache(finalPath || originalFilepath);
+        
         return { success: true };
       }
 

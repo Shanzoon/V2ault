@@ -1,7 +1,7 @@
-'use client';
+﻿'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, X, Grid, LayoutGrid, Maximize, Clock, Layers, Download, Trash2 } from 'lucide-react';
+import { Search, X, Grid, LayoutGrid, Maximize, Clock, Layers, Download, Trash2, Check } from 'lucide-react';
 import type { GridSize, SortMode } from '../types';
 
 interface SidebarProps {
@@ -13,6 +13,8 @@ interface SidebarProps {
   setSearch: (value: string) => void;
   selectedResolutions: string[];
   toggleResolution: (res: string) => void;
+  likedOnly: boolean;
+  setLikedOnly: (value: boolean) => void;
 
   // View
   gridSize: GridSize;
@@ -46,6 +48,8 @@ export function Sidebar({
   setSearch,
   selectedResolutions,
   toggleResolution,
+  likedOnly,
+  setLikedOnly,
   gridSize,
   setGridSize,
   sortMode,
@@ -65,117 +69,117 @@ export function Sidebar({
   return (
     <>
       {/* Mobile Overlay */}
-      {isMobileMenuOpen && (
-        <div
-          className="fixed inset-0 bg-black/80 z-40 md:hidden"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 lg:hidden"
+          />
+        )}
+      </AnimatePresence>
 
-      {/* Sidebar */}
+      {/* Sidebar Content */}
       <aside
-        className={`
-        fixed inset-y-0 left-0 z-50 w-80 h-full flex flex-col bg-black/95 backdrop-blur-2xl transition-transform duration-300 ease-in-out
-        md:relative md:translate-x-0 md:bg-black/30 md:flex md:z-auto
-        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}
+        className={`fixed lg:sticky top-0 left-0 h-full w-[280px] bg-[#0a0a0a] border-r border-white/5 flex flex-col z-50 transition-transform duration-300 ease-out ${
+          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        }`}
       >
-        {/* App Title */}
-        <div className="p-6 pb-4">
-          <h1
+        {/* Header */}
+        <div className="p-6 border-b border-white/5">
+          <h1 
             onClick={onTitleClick}
-            className="text-3xl font-black cursor-pointer hover:opacity-80 transition-opacity tracking-tight"
+            className="text-2xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-500 cursor-pointer hover:opacity-80 transition-opacity"
           >
-            <span className="text-blue-600">V</span>
-            <span className="text-gray-500">2ault</span>
+            V2ault
           </h1>
-          <p className="text-[10px] font-bold tracking-[0.2em] text-gray-500 mt-2">
-            <span className="text-gray-300">{totalAssets.toLocaleString()}</span> ASSETS INDEXED
+          <p className="text-xs font-medium text-gray-500 mt-2 uppercase tracking-widest">
+            {totalAssets} Assets
           </p>
         </div>
 
-        {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-y-auto px-6 space-y-6 pb-6 scrollbar-hide">
-          {/* Search Module */}
-          <div className="space-y-2">
-            <div className="relative group">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-4 w-4 text-gray-400 group-focus-within:text-cyan-400 transition-colors" />
-              </div>
-              <input
-                type="text"
-                className="block w-full pl-10 pr-8 py-2.5 bg-white/5 border-none rounded-xl text-sm text-gray-200 placeholder-white/20 focus:outline-none focus:ring-1 focus:ring-white/20 transition-all"
-                placeholder="Search prompts..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              {search.length > 0 && (
-                <button
-                  onClick={() => setSearch('')}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-white transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
+        {/* Scrollable Area */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+          {/* Search */}
+          <div className="relative group">
+            <input
+              type="text"
+              placeholder="Search assets..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 pl-11 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-white/20 focus:bg-white/10 transition-all group-hover:border-white/20"
+            />
+            <Search className="absolute left-3.5 top-3.5 text-gray-600 w-4 h-4 group-hover:text-gray-400 transition-colors" />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-3.5 top-3.5 text-gray-600 hover:text-white transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
-          {/* View & Sort Options (Compact) */}
-          <div className="flex items-center gap-2">
-            {/* View Options (3 buttons) */}
-            <div className="flex-1 grid grid-cols-3 gap-1 p-1 bg-white/5 rounded-xl">
+          {/* View Toggle */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Layout</h2>
+            </div>
+            <div className="flex gap-2 p-1 bg-black/20 rounded-xl border border-white/5">
               <button
                 onClick={() => setGridSize('small')}
-                className={`flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
+                className={`flex-1 flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
                   gridSize === 'small'
                     ? 'bg-white/10 text-white shadow-sm'
                     : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
                 }`}
-                title="Small Grid"
               >
                 <Grid className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setGridSize('medium')}
-                className={`flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
+                className={`flex-1 flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
                   gridSize === 'medium'
                     ? 'bg-white/10 text-white shadow-sm'
                     : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
                 }`}
-                title="Medium Grid"
               >
                 <LayoutGrid className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setGridSize('large')}
-                className={`flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
+                className={`flex-1 flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
                   gridSize === 'large'
                     ? 'bg-white/10 text-white shadow-sm'
                     : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
                 }`}
-                title="Large Grid"
               >
                 <Maximize className="w-4 h-4" />
               </button>
             </div>
+          </div>
 
-            {/* Sort Order (2 buttons) */}
-            <div className="flex-[0.6] grid grid-cols-2 gap-1 p-1 bg-white/5 rounded-xl">
+          {/* Sort Options */}
+          <div className="space-y-2">
+            <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Sort</h2>
+            <div className="flex gap-2 p-1 bg-black/20 rounded-xl border border-white/5">
               <button
-                onClick={() => setSortMode('newest')}
+                onClick={() => setSortMode('date_desc')}
                 className={`flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
-                  sortMode === 'newest'
+                  sortMode === 'date_desc'
                     ? 'bg-white/10 text-white shadow-sm'
                     : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
                 }`}
-                title="Newest First"
+                title="Latest"
               >
                 <Clock className="w-4 h-4" />
               </button>
               <button
                 onClick={() => {
                   setSortMode('random_block');
-                  setRandomSeed(Math.floor(Math.random() * 1000));
+                  setRandomSeed(Math.floor(Math.random() * 1000000));
                 }}
                 className={`flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
                   sortMode === 'random_block'
@@ -189,11 +193,36 @@ export function Sidebar({
             </div>
           </div>
 
+          {/* Liked Filter */}
+          <div className="space-y-2">
+            <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Filter</h2>
+             <label className="flex items-center gap-3 cursor-pointer group p-2 rounded-xl border border-transparent hover:bg-white/5 transition-all">
+               <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all duration-300 ${
+                 likedOnly 
+                   ? 'bg-red-500 border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.3)]' 
+                   : 'border-white/20 bg-white/5 group-hover:border-white/40'
+               }`}>
+                 {likedOnly && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+               </div>
+               <span className={`text-xs font-bold tracking-wide uppercase transition-colors ${
+                 likedOnly ? 'text-white' : 'text-gray-500 group-hover:text-gray-300'
+               }`}>
+                 Liked
+               </span>
+               <input 
+                 type="checkbox" 
+                 className="hidden" 
+                 checked={likedOnly} 
+                 onChange={(e) => setLikedOnly(e.target.checked)} 
+               />
+             </label>
+          </div>
+
           {/* Resolution Filter */}
           <div className="space-y-2">
             <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Resolution</h2>
             <div className="flex flex-col gap-2">
-              {['low', 'medium', 'high', 'ultra'].map((res) => (
+              {['medium', 'high', 'ultra'].map((res) => (
                 <button
                   key={res}
                   onClick={() => toggleResolution(res)}

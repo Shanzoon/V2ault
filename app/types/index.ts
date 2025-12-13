@@ -1,9 +1,22 @@
-export interface Image {
+﻿export interface Image {
   id: number;
   filename: string;
-  prompt: string;
-  width: number;
-  height: number;
+  filepath: string;
+  width: number | null;
+  height: number | null;
+  created_at: string | null;
+  prompt: string | null;
+  negative_prompt: string | null;
+
+  filesize?: number | null;
+  imported_at?: number | null;
+  source?: string | null;
+  model_base_id?: number | null;
+  style?: string | null;
+  blurhash?: string | null;
+  dominant_color?: string | null;
+  like_count?: number;
+  favorite?: number;
 }
 
 export interface ApiResponse {
@@ -14,7 +27,7 @@ export interface ApiResponse {
 
 export type GridSize = 'small' | 'medium' | 'large';
 
-export type SortMode = 'newest' | 'random_block' | 'random_shuffle';
+export type SortMode = 'newest' | 'random_block' | 'random_shuffle' | 'date_desc';
 
 export interface DeleteConfirmation {
   show: boolean;
@@ -28,5 +41,6 @@ export interface ImageCardProps {
   isSelected: boolean;
   onToggleSelection: (id: number) => void;
   onImageClick: (img: Image) => void;
+  onToggleLiked?: (id: number) => void;
   gridSize: GridSize;
 }

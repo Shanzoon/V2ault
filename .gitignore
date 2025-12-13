@@ -1,6 +1,4 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
+# === 依赖 ===
 /node_modules
 /.pnp
 .pnp.*
@@ -10,38 +8,47 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
-
-# next.js
+# === Next.js ===
 /.next/
 /out/
-
-# production
 /build
 
-# misc
+# === 测试 ===
+/coverage
+
+# === 环境变量 ===
+.env
+.env.*
+!.env.local.example
+
+# === 数据文件（不提交到仓库）===
+*.db
+*.db-wal
+*.db-shm
+
+# === 缓存目录 ===
+/cache/
+
+# === 系统文件 ===
 .DS_Store
 *.pem
+Thumbs.db
 
-# debug
+# === 日志 ===
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# === IDE ===
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# vercel
-.vercel
-
-# typescript
+# === TypeScript ===
 *.tsbuildinfo
 next-env.d.ts
 
-# 缩略图缓存目录
-/cache/
-
-# 数据库文件（可选：如果想追踪数据库，删除这行）
-# /images.db
+# === Vercel ===
+.vercel
