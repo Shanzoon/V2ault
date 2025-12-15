@@ -1,11 +1,20 @@
 import { NextResponse } from 'next/server';
 
+// 错误代码常量
+export const ERROR_CODES = {
+  DB_NOT_FOUND: 'DB_NOT_FOUND',
+  DB_NOT_INITIALIZED: 'DB_NOT_INITIALIZED',
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+} as const;
+
+export type ErrorCode = typeof ERROR_CODES[keyof typeof ERROR_CODES];
+
 /**
  * 统一的错误响应格式
  */
-export function errorResponse(message: string, status: number, details?: string) {
+export function errorResponse(message: string, status: number, details?: string, code?: ErrorCode) {
   return NextResponse.json(
-    { error: message, ...(details && { details }) },
+    { error: message, ...(details && { details }), ...(code && { code }) },
     { status }
   );
 }

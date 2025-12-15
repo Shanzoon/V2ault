@@ -21,7 +21,16 @@ CREATE TABLE IF NOT EXISTS images (
     negative_prompt TEXT,
     width INTEGER,
     height INTEGER,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    filesize INTEGER,
+    imported_at INTEGER,
+    source TEXT,
+    model_base_id INTEGER,
+    style TEXT,
+    blurhash TEXT,
+    dominant_color TEXT,
+    like_count INTEGER NOT NULL DEFAULT 0,
+    favorite INTEGER NOT NULL DEFAULT 0
 );
 `;
 

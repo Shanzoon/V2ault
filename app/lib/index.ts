@@ -4,6 +4,9 @@ export {
   DB_PATH,
   CACHE_DIR,
   IMAGE_ROOTS,
+  UPLOAD_DIR,
+  UPLOAD_MAX_SIZE,
+  UPLOAD_MAX_FILES,
   windowsToWslPath,
   wslToWindowsPath,
   normalizePath,
@@ -14,10 +17,10 @@ export {
 } from './constants';
 
 // 数据库
-export { getDatabase, withDatabase, withDatabaseSync } from './db';
+export { getDatabase, withDatabase, withDatabaseSync, DatabaseError, checkDatabaseStatus } from './db';
 
 // 错误处理
-export { errorResponse, parseJsonBody, getErrorMessage } from './errors';
+export { errorResponse, parseJsonBody, getErrorMessage, ERROR_CODES, type ErrorCode } from './errors';
 
 // 缓存
 export {

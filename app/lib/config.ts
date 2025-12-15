@@ -80,6 +80,35 @@ export const IMAGE_ROOTS: string[] = (process.env.IMAGE_ROOTS ?? '')
   .filter(Boolean)
   .map(normalizePath);
 
+/**
+ * 上传图片存储目录
+ * 环境变量: UPLOAD_DIR
+ * 默认值: ../V2ault_uploads (项目上一层)
+ */
+export const UPLOAD_DIR: string = normalizePath(
+  process.env.UPLOAD_DIR ?? path.join(process.cwd(), '..', 'V2ault_uploads')
+);
+
+/**
+ * 上传文件大小限制（字节）
+ * 环境变量: UPLOAD_MAX_SIZE
+ * 默认值: 20971520 (20MB)
+ */
+export const UPLOAD_MAX_SIZE: number = parseInt(
+  process.env.UPLOAD_MAX_SIZE ?? '20971520',
+  10
+);
+
+/**
+ * 单次上传最大文件数量
+ * 环境变量: UPLOAD_MAX_FILES
+ * 默认值: 500
+ */
+export const UPLOAD_MAX_FILES: number = parseInt(
+  process.env.UPLOAD_MAX_FILES ?? '500',
+  10
+);
+
 // ============================================
 // 配置验证（可选，开发时使用）
 // ============================================

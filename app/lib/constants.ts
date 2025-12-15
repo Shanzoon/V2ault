@@ -1,5 +1,5 @@
 // 从 config.ts 导入路径配置
-export { IMAGE_DB_PATH, CACHE_DIR, IMAGE_ROOTS } from './config';
+export { IMAGE_DB_PATH, CACHE_DIR, IMAGE_ROOTS, UPLOAD_DIR, UPLOAD_MAX_SIZE, UPLOAD_MAX_FILES } from './config';
 export { windowsToWslPath, wslToWindowsPath, normalizePath } from './config';
 
 // 兼容旧代码：DB_PATH 作为 IMAGE_DB_PATH 的别名

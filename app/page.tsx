@@ -4,13 +4,16 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 
 
 import type { Image, GridSize, DeleteConfirmation } from './types';
-import { useImages, useSelection, useKeyboardShortcuts } from './hooks';
+import { useImages, useSelection, useKeyboardShortcuts, useUploadQueue, useAuth } from './hooks';
 import {
   ImageModal,
   ImageGrid,
   Sidebar,
   MobileHeader,
   DeleteConfirmModal,
+  UploadModal,
+  UploadProgress,
+  DatabaseErrorBanner,
 } from './components';
 
 export default function Home() {
@@ -21,6 +24,7 @@ export default function Home() {
     isLoading,
     hasMore,
     loadMoreRef,
+    error,
     search,
     debouncedSearch,
     setSearch,
@@ -37,6 +41,7 @@ export default function Home() {
     removeImage,
     removeImages,
     toggleLiked,
+    refetch,
   } = useImages();
 
   // Selection Hook
@@ -47,6 +52,12 @@ export default function Home() {
     toggleSelection,
     clearSelection,
   } = useSelection();
+
+  // Upload Queue Hook
+  const uploadQueue = useUploadQueue(refetch);
+
+  // Auth Hook
+  const { isAdmin, login, logout } = useAuth();
 
   // UI State
   const [gridSize, setGridSize] = useState<GridSize>('small');
@@ -63,6 +74,9 @@ export default function Home() {
     triggerRect: null,
   });
 
+  // Upload Modal State
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+
   // Refs
   const singleDeleteBtnRef = useRef<HTMLButtonElement>(null);
   const bulkDeleteBtnRef = useRef<HTMLButtonElement>(null);
@@ -74,6 +88,16 @@ export default function Home() {
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, [debouncedSearch, sortMode, randomSeed]);
+
+  // Sync selectedImage with images array (for like status updates)
+  useEffect(() => {
+    if (selectedImage) {
+      const updatedImage = images.find(img => img.id === selectedImage.id);
+      if (updatedImage && updatedImage.like_count !== selectedImage.like_count) {
+        setSelectedImage(updatedImage);
+      }
+    }
+  }, [images, selectedImage]);
 
   // Handlers
   const handleTitleClick = useCallback(() => {
@@ -153,12 +177,27 @@ export default function Home() {
     } else if (deleteConfirmation.type === 'single' && selectedImage) {
       try {
         setIsDeleting(true);
+        const currentIndex = images.findIndex(img => img.id === selectedImage.id);
         const res = await fetch(`/api/images/${selectedImage.id}`, {
           method: 'DELETE',
         });
         if (!res.ok) throw new Error('Failed to delete');
         removeImage(selectedImage.id);
-        setSelectedImage(null);
+
+        // Navigate to next or previous image instead of closing
+        if (images.length > 1) {
+          if (currentIndex < images.length - 1) {
+            // Go to next image
+            setSelectedImage(images[currentIndex + 1]);
+          } else if (currentIndex > 0) {
+            // Go to previous image if at the end
+            setSelectedImage(images[currentIndex - 1]);
+          } else {
+            setSelectedImage(null);
+          }
+        } else {
+          setSelectedImage(null);
+        }
       } catch (error) {
         console.error('Error deleting image:', error);
         alert('Failed to delete image');
@@ -167,7 +206,7 @@ export default function Home() {
         setDeleteConfirmation({ show: false, type: null });
       }
     }
-  }, [deleteConfirmation.type, selectedImageIds, selectedImage, removeImages, removeImage, clearSelection]);
+  }, [deleteConfirmation.type, selectedImageIds, selectedImage, images, removeImages, removeImage, clearSelection]);
 
   // Keyboard Shortcuts
   useKeyboardShortcuts({
@@ -183,6 +222,8 @@ export default function Home() {
     setSelectedImage,
     setIsEditingPrompt: () => {},
     setDeleteConfirmation,
+    setIsSelectionMode,
+    clearSelection,
     onBatchDelete: handleBatchDelete,
     onSingleDelete: handleSingleDelete,
     executeDelete,
@@ -221,6 +262,10 @@ export default function Home() {
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
         onTitleClick={handleTitleClick}
+        onUploadClick={() => setIsUploadModalOpen(true)}
+        isAdmin={isAdmin}
+        onLogin={login}
+        onLogout={logout}
       />
 
       {/* Main Content */}
@@ -229,18 +274,23 @@ export default function Home() {
         className="flex-1 h-full overflow-y-auto relative bg-black p-4 md:p-10 lg:p-12 scrollbar-hide md:scrollbar-thin md:scrollbar-thumb-white/10 md:scrollbar-track-transparent pt-16 md:pt-10"
       >
         <div className="max-w-[2000px] mx-auto min-h-full pb-20">
-          <ImageGrid
-            images={images}
-            isLoading={isLoading}
-            hasMore={hasMore}
-            gridSize={gridSize}
-            isSelectionMode={isSelectionMode}
-            selectedImageIds={selectedImageIds}
-            onToggleSelection={toggleSelection}
-            onImageClick={setSelectedImage}
-            onToggleLiked={toggleLiked}
-            loadMoreRef={loadMoreRef}
-          />
+          {/* Error State */}
+          {error ? (
+            <DatabaseErrorBanner error={error} onRetry={refetch} />
+          ) : (
+            <ImageGrid
+              images={images}
+              isLoading={isLoading}
+              hasMore={hasMore}
+              gridSize={gridSize}
+              isSelectionMode={isSelectionMode}
+              selectedImageIds={selectedImageIds}
+              onToggleSelection={toggleSelection}
+              onImageClick={setSelectedImage}
+              onToggleLiked={toggleLiked}
+              loadMoreRef={loadMoreRef}
+            />
+          )}
         </div>
       </main>
 
@@ -254,6 +304,7 @@ export default function Home() {
         onDelete={handleSingleDelete}
         onUpdateImage={updateImage}
         onToggleLiked={toggleLiked}
+        isAdmin={isAdmin}
       />
 
       {/* Delete Confirmation Modal */}
@@ -262,6 +313,25 @@ export default function Home() {
         setDeleteConfirmation={setDeleteConfirmation}
         selectedImageIds={selectedImageIds}
         onConfirm={executeDelete}
+      />
+
+      {/* Upload Modal */}
+      <UploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onStartUpload={(tasks) => {
+          uploadQueue.addTasks(tasks);
+        }}
+      />
+
+      {/* Upload Progress */}
+      <UploadProgress
+        state={uploadQueue.state}
+        isMinimized={uploadQueue.isMinimized}
+        isVisible={uploadQueue.isVisible}
+        onToggleMinimize={() => uploadQueue.setIsMinimized(!uploadQueue.isMinimized)}
+        onCancel={uploadQueue.cancelUpload}
+        onClear={uploadQueue.clearQueue}
       />
     </div>
   );

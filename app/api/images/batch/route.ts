@@ -5,12 +5,18 @@ import {
   parseJsonBody,
   getErrorMessage,
 } from '@/app/lib';
+import { isAdmin } from '@/app/lib/auth';
 
 interface BatchDeleteBody {
   ids: number[];
 }
 
 export async function DELETE(request: NextRequest) {
+  // 权限检查
+  if (!(await isAdmin())) {
+    return errorResponse('Unauthorized', 403);
+  }
+
   // 解析请求体
   const body = await parseJsonBody<BatchDeleteBody>(request);
   if (!body) {

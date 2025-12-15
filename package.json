@@ -10,7 +10,7 @@
     "lint": "eslint",
     "db:init": "tsx scripts/init-db.ts",
     "db:scan": "tsx scripts/scan-images.ts",
-    "db:debug": "tsx scripts/debug-data.ts"
+    "db:scan:full": "tsx scripts/scan-images.ts --blurhash"
   },
   "dependencies": {
     "@types/file-saver": "^2.0.7",

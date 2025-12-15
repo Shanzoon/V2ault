@@ -17,6 +17,8 @@ interface UseKeyboardShortcutsOptions {
   setSelectedImage: (img: Image | null) => void;
   setIsEditingPrompt: (value: boolean) => void;
   setDeleteConfirmation: (value: DeleteConfirmation) => void;
+  setIsSelectionMode: (value: boolean) => void;
+  clearSelection: () => void;
   onBatchDelete: () => void;
   onSingleDelete: () => void;
   executeDelete: () => void;
@@ -35,6 +37,8 @@ export function useKeyboardShortcuts({
   setSelectedImage,
   setIsEditingPrompt,
   setDeleteConfirmation,
+  setIsSelectionMode,
+  clearSelection,
   onBatchDelete,
   onSingleDelete,
   executeDelete,
@@ -96,6 +100,14 @@ export function useKeyboardShortcuts({
         return;
       }
 
+      // ESC to exit selection mode
+      if (e.key === 'Escape' && isSelectionMode && !selectedImage) {
+        setIsSelectionMode(false);
+        clearSelection();
+        toast('已退出多选模式');
+        return;
+      }
+
       if (!selectedImage) return;
 
       if (isEditingPrompt) {
@@ -130,6 +142,8 @@ export function useKeyboardShortcuts({
     setSelectedImage,
     setIsEditingPrompt,
     setDeleteConfirmation,
+    setIsSelectionMode,
+    clearSelection,
     onBatchDelete,
     onSingleDelete,
     executeDelete,

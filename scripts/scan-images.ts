@@ -3,13 +3,17 @@
  * 扫描指定目录下的图片文件，提取元数据并写入数据库
  *
  * 使用方法:
- *   npx tsx scripts/scan-images.ts
- *   npx tsx scripts/scan-images.ts --root "/mnt/d/custom/path"
+ *   npx tsx scripts/scan-images.ts                          # 快速扫描
+ *   npx tsx scripts/scan-images.ts --blurhash               # 扫描并生成 blurhash
+ *   npx tsx scripts/scan-images.ts --root "/mnt/d/images"   # 指定目录
+ *   npx tsx scripts/scan-images.ts --root "/path" --blurhash # 组合使用
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { glob } from 'glob';
 import Database from 'better-sqlite3';
+import sharp from 'sharp';
+import { encode } from 'blurhash';
 import { IMAGE_DB_PATH, IMAGE_ROOTS, normalizePath, printConfig } from './config';
 
 // ============================================
@@ -17,21 +21,26 @@ import { IMAGE_DB_PATH, IMAGE_ROOTS, normalizePath, printConfig } from './config
 // ============================================
 
 const BATCH_SIZE = 100;
+const BLURHASH_COMPONENT_X = 4;
+const BLURHASH_COMPONENT_Y = 3;
 
 // 支持命令行参数覆盖
-function parseArgs(): { roots: string[] } {
+function parseArgs(): { roots: string[]; generateBlurhash: boolean } {
   const args = process.argv.slice(2);
   const roots: string[] = [];
+  let generateBlurhash = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--root' && args[i + 1]) {
       roots.push(normalizePath(args[i + 1]));
       i++;
+    } else if (args[i] === '--blurhash') {
+      generateBlurhash = true;
     }
   }
 
   // 如果命令行没有指定，使用环境变量配置
-  return { roots: roots.length > 0 ? roots : IMAGE_ROOTS };
+  return { roots: roots.length > 0 ? roots : IMAGE_ROOTS, generateBlurhash };
 }
 
 // ============================================
@@ -52,12 +61,44 @@ function getDimensions(buffer: Buffer): { width: number; height: number } {
   }
 }
 
+async function getDominantColor(imageBuffer: Buffer): Promise<string | null> {
+  try {
+    const { dominant } = await sharp(imageBuffer).stats();
+    const r = dominant.r.toString(16).padStart(2, '0');
+    const g = dominant.g.toString(16).padStart(2, '0');
+    const b = dominant.b.toString(16).padStart(2, '0');
+    return '#' + r + g + b;
+  } catch {
+    return null;
+  }
+}
+
+async function generateBlurhash(imageBuffer: Buffer): Promise<string | null> {
+  try {
+    const { data, info } = await sharp(imageBuffer)
+      .raw()
+      .ensureAlpha()
+      .resize(32, 32, { fit: 'inside' })
+      .toBuffer({ resolveWithObject: true });
+
+    return encode(
+      new Uint8ClampedArray(data),
+      info.width,
+      info.height,
+      BLURHASH_COMPONENT_X,
+      BLURHASH_COMPONENT_Y
+    );
+  } catch {
+    return null;
+  }
+}
+
 // ============================================
 // 主扫描逻辑
 // ============================================
 
 async function scan() {
-  const { roots } = parseArgs();
+  const { roots, generateBlurhash: withBlurhash } = parseArgs();
 
   console.log('=== V2ault Image Scanner ===');
   printConfig();
@@ -71,10 +112,10 @@ async function scan() {
 
   console.log(`数据库路径: ${IMAGE_DB_PATH}`);
   console.log(`扫描目录: ${roots.join(', ')}`);
+  console.log(`生成 Blurhash: ${withBlurhash ? '是' : '否'}`);
 
   const db = new Database(IMAGE_DB_PATH);
 
-  // 注意：这里已经把 filesize / imported_at / source 一起写进去了
   const insertStmt = db.prepare(`
     INSERT OR IGNORE INTO images (
       filename,
@@ -85,11 +126,13 @@ async function scan() {
       created_at,
       filesize,
       imported_at,
-      source
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      source,
+      blurhash,
+      dominant_color
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  const processBatch = db.transaction((items: Array<{
+  interface BatchItem {
     filename: string;
     filepath: string;
     prompt: string | null;
@@ -99,7 +142,11 @@ async function scan() {
     filesize: number;
     imported_at: number;
     source: string;
-  }>) => {
+    blurhash: string | null;
+    dominant_color: string | null;
+  }
+
+  const processBatch = db.transaction((items: BatchItem[]) => {
     for (const item of items) {
       insertStmt.run(
         item.filename,
@@ -110,7 +157,9 @@ async function scan() {
         item.created_at,
         item.filesize,
         item.imported_at,
-        item.source
+        item.source,
+        item.blurhash,
+        item.dominant_color
       );
     }
   });
@@ -124,17 +173,7 @@ async function scan() {
       const files = await glob(pattern);
       console.log(`找到 ${files.length} 个 PNG 文件`);
 
-      let batch: Array<{
-        filename: string;
-        filepath: string;
-        prompt: string | null;
-        width: number;
-        height: number;
-        created_at: string;
-        filesize: number;
-        imported_at: number;
-        source: string;
-      }> = [];
+      let batch: BatchItem[] = [];
       let processed = 0;
 
       for (const file of files) {
@@ -160,6 +199,17 @@ async function scan() {
             }
           }
 
+          // 可选生成 blurhash 和 dominant_color
+          let blurhash: string | null = null;
+          let dominant_color: string | null = null;
+
+          if (withBlurhash) {
+            [blurhash, dominant_color] = await Promise.all([
+              generateBlurhash(buffer),
+              getDominantColor(buffer),
+            ]);
+          }
+
           batch.push({
             filename,
             filepath,
@@ -170,10 +220,11 @@ async function scan() {
               .toISOString()
               .replace('T', ' ')
               .split('.')[0],
-            // 新增的三个字段
-            filesize: stats.size,                     // 文件大小（字节）
-            imported_at: Math.floor(Date.now() / 1000), // 导入时间（当前时间，Unix 秒）
-            source: 'scan_script',                    // 标记来源，你也可以改成 'comfy' 等
+            filesize: stats.size,
+            imported_at: Math.floor(Date.now() / 1000),
+            source: 'scan_script',
+            blurhash,
+            dominant_color,
           });
 
           if (batch.length >= BATCH_SIZE) {

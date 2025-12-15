@@ -9,6 +9,7 @@ import {
   clearImageCache,
   deleteSourceFile,
 } from '@/app/lib';
+import { isAdmin } from '@/app/lib/auth';
 
 interface UpdatePromptBody {
   prompt: string;
@@ -18,6 +19,11 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // 权限检查
+  if (!(await isAdmin())) {
+    return errorResponse('Unauthorized', 403);
+  }
+
   const { id } = await params;
 
   try {

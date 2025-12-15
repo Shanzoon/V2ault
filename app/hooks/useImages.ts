@@ -5,6 +5,12 @@ import { useInView } from 'react-intersection-observer';
 import { useDebounce } from 'use-debounce';
 import type { Image, ApiResponse, SortMode } from '../types';
 
+// 错误类型定义
+export interface ApiError {
+  code: 'DB_NOT_FOUND' | 'DB_NOT_INITIALIZED' | 'NETWORK_ERROR' | 'UNKNOWN_ERROR';
+  message: string;
+}
+
 interface UseImagesOptions {
   limit?: number;
 }
@@ -17,6 +23,7 @@ export function useImages(options: UseImagesOptions = {}) {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
 
   const [search, setSearch] = useState('');
   const [debouncedSearch] = useDebounce(search, 500);
@@ -62,6 +69,10 @@ export function useImages(options: UseImagesOptions = {}) {
     abortControllerRef.current = controller;
 
     setIsLoading(true);
+    // 只在首页加载时清除错误（允许重试）
+    if (page === 1) {
+      setError(null);
+    }
 
     try {
       const resolutionsParam = selectedResolutions.length > 0 ? `&resolutions=${selectedResolutions.join(',')}` : '';
@@ -71,7 +82,22 @@ export function useImages(options: UseImagesOptions = {}) {
       const url = `/api/images/list?page=${page}&limit=${limit}&search=${encodeURIComponent(debouncedSearch)}&sort=${sortMode}${resolutionsParam}${seedParam}${likedParam}`;
 
       const res = await fetch(url, { signal: controller.signal });
-      if (!res.ok) throw new Error('Failed to fetch');
+
+      if (!res.ok) {
+        // 尝试解析错误响应
+        const errorData = await res.json().catch(() => ({}));
+
+        if (errorData.code === 'DB_NOT_FOUND' || errorData.code === 'DB_NOT_INITIALIZED') {
+          setError({
+            code: errorData.code,
+            message: errorData.error || '数据库错误',
+          });
+          setHasMore(false);
+          return;
+        }
+
+        throw new Error(errorData.error || 'Failed to fetch');
+      }
 
       const data: ApiResponse = await res.json();
 
@@ -92,6 +118,14 @@ export function useImages(options: UseImagesOptions = {}) {
         console.log('Fetch aborted');
       } else {
         console.error('Error fetching images:', error);
+        // 只在第一页设置错误（避免无限滚动时的错误覆盖）
+        if (page === 1) {
+          setError({
+            code: 'NETWORK_ERROR',
+            message: error instanceof Error ? error.message : '网络请求失败',
+          });
+          setHasMore(false);
+        }
       }
     } finally {
       if (abortControllerRef.current === controller) {
@@ -149,7 +183,7 @@ export function useImages(options: UseImagesOptions = {}) {
       const res = await fetch(`/api/images/${id}/liked`, { method: 'PATCH' });
       if (!res.ok) throw new Error('Failed to toggle liked');
       const data = await res.json();
-      
+
       // Sync with server response
       setImages(prev => prev.map(img => {
         if (img.id === id) {
@@ -170,6 +204,15 @@ export function useImages(options: UseImagesOptions = {}) {
     }
   }, []);
 
+  // Refetch from the beginning (used after upload)
+  const refetch = useCallback(() => {
+    resetGallery();
+    // Trigger a new random seed if in random mode to show new content
+    if (sortMode.startsWith('random')) {
+      setRandomSeed(Math.floor(Math.random() * 1000000));
+    }
+  }, [resetGallery, sortMode]);
+
   return {
     // Data
     images,
@@ -177,6 +220,7 @@ export function useImages(options: UseImagesOptions = {}) {
     isLoading,
     hasMore,
     loadMoreRef,
+    error,
 
     // Search & Filter
     search,
@@ -199,6 +243,6 @@ export function useImages(options: UseImagesOptions = {}) {
     removeImage,
     removeImages,
     toggleLiked,
-    refetch: fetchImages,
+    refetch,
   };
 }

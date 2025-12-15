@@ -1,7 +1,8 @@
 ﻿'use client';
 
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, X, Grid, LayoutGrid, Maximize, Clock, Layers, Download, Trash2, Check } from 'lucide-react';
+import { Search, X, Grid, LayoutGrid, Maximize, Clock, Layers, Download, Trash2, Check, Upload, Lock, LogOut } from 'lucide-react';
 import type { GridSize, SortMode } from '../types';
 
 interface SidebarProps {
@@ -40,6 +41,14 @@ interface SidebarProps {
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (value: boolean) => void;
   onTitleClick: () => void;
+
+  // Upload
+  onUploadClick: () => void;
+
+  // Auth
+  isAdmin: boolean;
+  onLogin: (password: string) => Promise<boolean>;
+  onLogout: () => Promise<void>;
 }
 
 export function Sidebar({
@@ -65,7 +74,33 @@ export function Sidebar({
   isMobileMenuOpen,
   setIsMobileMenuOpen,
   onTitleClick,
+  onUploadClick,
+  isAdmin,
+  onLogin,
+  onLogout,
 }: SidebarProps) {
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const handleLogin = async () => {
+    if (!password.trim()) return;
+    setIsLoggingIn(true);
+    setLoginError(false);
+    const success = await onLogin(password);
+    setIsLoggingIn(false);
+    if (success) {
+      setShowLoginModal(false);
+      setPassword('');
+    } else {
+      setLoginError(true);
+    }
+  };
+
+  const handleLogout = async () => {
+    await onLogout();
+  };
   return (
     <>
       {/* Mobile Overlay */}
@@ -89,7 +124,7 @@ export function Sidebar({
       >
         {/* Header */}
         <div className="p-6 border-b border-white/5">
-          <h1 
+          <h1
             onClick={onTitleClick}
             className="text-2xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-500 cursor-pointer hover:opacity-80 transition-opacity"
           >
@@ -98,6 +133,22 @@ export function Sidebar({
           <p className="text-xs font-medium text-gray-500 mt-2 uppercase tracking-widest">
             {totalAssets} Assets
           </p>
+        </div>
+
+        {/* Upload Button */}
+        <div className="px-6 py-4 border-b border-white/5">
+          <button
+            onClick={onUploadClick}
+            disabled={!isAdmin}
+            className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold uppercase tracking-wide transition-all shadow-lg ${
+              isAdmin
+                ? 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white shadow-cyan-900/20'
+                : 'bg-gray-700/50 text-gray-500 cursor-not-allowed shadow-none'
+            }`}
+          >
+            <Upload className="w-4 h-4" />
+            上传图片
+          </button>
         </div>
 
         {/* Scrollable Area */}
@@ -240,7 +291,8 @@ export function Sidebar({
         </div>
 
         {/* Selection Actions (Footer) */}
-        <div className="p-6 border-t border-white/10 space-y-4 bg-black/20">
+        <div className="p-6 border-t border-white/10 bg-black/20 flex flex-col-reverse gap-4">
+          {/* Toggle Switch - Always at bottom */}
           <div className="flex items-center justify-between">
             <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Selection Mode</h2>
             <button
@@ -257,13 +309,14 @@ export function Sidebar({
             </button>
           </div>
 
+          {/* Action Panel - Appears above the toggle */}
           <AnimatePresence>
             {isSelectionMode && (
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="space-y-3 overflow-hidden"
+                initial={{ opacity: 0, height: 0, marginBottom: 0 }}
+                animate={{ opacity: 1, height: 'auto', marginBottom: 0 }}
+                exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+                className="overflow-hidden"
               >
                 <div className="bg-white/5 rounded-xl p-4 border border-white/10 backdrop-blur-md">
                   <div className="flex items-center justify-between mb-4 text-xs font-medium text-gray-400">
@@ -287,7 +340,7 @@ export function Sidebar({
                     </button>
                     <button
                       onClick={onBatchDelete}
-                      disabled={isDeleting || selectedImageIds.size === 0}
+                      disabled={!isAdmin || isDeleting || selectedImageIds.size === 0}
                       className="flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wide transition-all disabled:opacity-30 disabled:cursor-not-allowed border border-red-500/20"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -298,8 +351,96 @@ export function Sidebar({
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Auth Button */}
+          <div className="pt-4 border-t border-white/5">
+            {isAdmin ? (
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-white/5"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                退出管理
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowLoginModal(true)}
+                className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-white/5"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                管理员登录
+              </button>
+            )}
+          </div>
         </div>
       </aside>
+
+      {/* Login Modal */}
+      <AnimatePresence>
+        {showLoginModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center"
+            onClick={() => {
+              setShowLoginModal(false);
+              setPassword('');
+              setLoginError(false);
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-[#1a1a1a] rounded-xl border border-white/10 p-6 w-[320px] shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-bold text-white mb-4">管理员登录</h3>
+              <input
+                type="password"
+                placeholder="输入密码"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setLoginError(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleLogin();
+                }}
+                className={`w-full bg-black/40 border rounded-lg px-4 py-3 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 transition-all ${
+                  loginError
+                    ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
+                    : 'border-white/10 focus:border-cyan-500 focus:ring-cyan-500'
+                }`}
+                autoFocus
+              />
+              {loginError && (
+                <p className="text-red-400 text-xs mt-2">密码错误</p>
+              )}
+              <div className="flex gap-3 mt-4">
+                <button
+                  onClick={() => {
+                    setShowLoginModal(false);
+                    setPassword('');
+                    setLoginError(false);
+                  }}
+                  className="flex-1 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleLogin}
+                  disabled={isLoggingIn || !password.trim()}
+                  className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white py-2.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoggingIn ? '登录中...' : '登录'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

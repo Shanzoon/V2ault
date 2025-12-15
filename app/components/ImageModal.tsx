@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { toast } from 'sonner';
-import { X, Download, Edit2, Save, Trash2, Copy, Layers, Box, Tag, Heart } from 'lucide-react';
+import { X, Download, Edit2, Save, Trash2, Copy, Layers, Heart } from 'lucide-react';
 import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import 'swiper/css';
@@ -18,6 +18,7 @@ interface ImageModalProps {
   onDelete: () => void;
   onUpdateImage: (img: Image) => void;
   onToggleLiked?: (id: number) => void;
+  isAdmin?: boolean;
 }
 
 export function ImageModal({
@@ -29,6 +30,7 @@ export function ImageModal({
   onDelete,
   onUpdateImage,
   onToggleLiked,
+  isAdmin = false,
 }: ImageModalProps) {
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editPromptValue, setEditPromptValue] = useState('');
@@ -248,14 +250,35 @@ export function ImageModal({
                 {selectedImage.width} × {selectedImage.height}
               </p>
             </div>
-            <a
-              href={`/api/image/${selectedImage.id}`}
-              download={selectedImage.filename}
-              className="p-2 bg-white/10 text-white rounded-full hover:bg-white/20"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Download className="w-5 h-5" />
-            </a>
+            <div className="flex items-center gap-2">
+              {/* Like Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleLiked?.(selectedImage.id);
+                }}
+                className={`p-2 rounded-full transition-colors ${
+                  selectedImage.like_count && selectedImage.like_count > 0
+                    ? 'bg-red-500/20 text-red-500'
+                    : 'bg-white/10 text-white hover:bg-white/20'
+                }`}
+              >
+                <Heart
+                  className={`w-5 h-5 ${
+                    selectedImage.like_count && selectedImage.like_count > 0 ? 'fill-current' : ''
+                  }`}
+                />
+              </button>
+              {/* Download Button */}
+              <a
+                href={`/api/image/${selectedImage.id}`}
+                download={selectedImage.filename}
+                className="p-2 bg-white/10 text-white rounded-full hover:bg-white/20"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Download className="w-5 h-5" />
+              </a>
+            </div>
           </div>
         </div>
 
@@ -275,20 +298,28 @@ export function ImageModal({
               </p>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                <Box className="w-3 h-3" /> Model
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <span className="px-3 py-1 bg-white/5 rounded-full text-xs border border-white/5 text-gray-300">
-                  Illustrious
-                </span>
+            {/* Style */}
+            {selectedImage.style && (
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                  <Layers className="w-3 h-3" /> Style
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <span className="px-3 py-1 bg-white/5 rounded-full text-xs border border-white/5 text-gray-300">
+                    {selectedImage.style}
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
             <button
               onClick={onDelete}
-              className="w-full flex items-center justify-center gap-2 bg-red-500/10 text-red-400 py-3 rounded-xl text-sm font-bold border border-red-500/20 mt-8"
+              disabled={!isAdmin}
+              className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold border mt-8 ${
+                isAdmin
+                  ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                  : 'bg-gray-700/50 text-gray-500 border-gray-600/20 cursor-not-allowed'
+              }`}
             >
               <Trash2 className="w-4 h-4" /> Delete Asset
             </button>
@@ -429,15 +460,17 @@ export function ImageModal({
 
               {/* Metadata Fields */}
               <div className="space-y-5 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                {/* SOURCE (Mock) */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                    <Layers className="w-3 h-3" /> Source
-                  </label>
-                  <div className="w-full bg-black/40 border border-white/5 rounded-lg px-3 py-2.5 text-sm text-gray-300">
-                    Anime Style
+                {/* STYLE */}
+                {selectedImage.style && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                      <Layers className="w-3 h-3" /> Style
+                    </label>
+                    <div className="w-full bg-black/40 border border-white/5 rounded-lg px-3 py-2.5 text-sm text-gray-300">
+                      {selectedImage.style}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* PROMPT */}
                 <div className="space-y-2">
@@ -504,38 +537,6 @@ export function ImageModal({
                     </div>
                   )}
                 </div>
-
-                {/* MODEL BASE (Mock) */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                    <Box className="w-3 h-3" /> Model Base
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/10 text-white border border-white/5 shadow-sm">
-                      Illustrious
-                    </span>
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-white/5 text-gray-400 border border-white/5">
-                      SDXL
-                    </span>
-                  </div>
-                </div>
-
-                {/* TAGS (Mock) */}
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                    <Tag className="w-3 h-3" /> Tags
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {['#anime', '#masterpiece', '#best quality', '#4k'].map((tag, i) => (
-                      <span
-                        key={i}
-                        className="text-xs text-gray-500 hover:text-cyan-400 cursor-pointer transition-colors"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
               </div>
 
               {/* Footer: Actions */}
@@ -572,7 +573,12 @@ export function ImageModal({
                 {/* Delete Button */}
                 <button
                   onClick={onDelete}
-                  className="flex-1 flex items-center justify-center gap-2 bg-transparent text-red-500/80 hover:text-red-400 py-3 rounded-lg text-sm font-medium transition-colors hover:bg-red-500/10 border border-red-500/20"
+                  disabled={!isAdmin}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-lg text-sm font-medium transition-colors border ${
+                    isAdmin
+                      ? 'bg-transparent text-red-500/80 hover:text-red-400 hover:bg-red-500/10 border-red-500/20'
+                      : 'bg-gray-700/30 text-gray-500 border-gray-600/20 cursor-not-allowed'
+                  }`}
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Delete
                 </button>

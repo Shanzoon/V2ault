@@ -4,3 +4,6 @@ export { ImageGrid } from './ImageGrid';
 export { Sidebar } from './Sidebar';
 export { MobileHeader } from './MobileHeader';
 export { DeleteConfirmModal } from './DeleteConfirmModal';
+export { UploadModal } from './UploadModal';
+export { UploadProgress } from './UploadProgress';
+export { DatabaseErrorBanner } from './DatabaseErrorBanner';

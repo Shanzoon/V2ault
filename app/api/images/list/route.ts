@@ -5,6 +5,7 @@ import {
   getErrorMessage,
   RESOLUTION_THRESHOLDS,
   DEFAULT_PAGE_SIZE,
+  DatabaseError,
 } from '@/app/lib';
 
 // 【修复】强制禁用 Next.js 的 API 缓存！
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
             const seedVal = BigInt(seed);
             return Number(((idVal * seedVal + 12345n) ^ (idVal << 13n)) % 2147483647n);
           });
-        } catch (e) {}
+        } catch {}
       }
 
       let query = 'SELECT * FROM images';
@@ -61,7 +62,7 @@ export async function GET(request: Request) {
       if (resolutions) {
         const resList = resolutions.split(',').map(r => r.trim());
         const resConditions: string[] = [];
-        const { LOW, MEDIUM, HIGH } = RESOLUTION_THRESHOLDS;
+        const { MEDIUM, HIGH } = RESOLUTION_THRESHOLDS;
 
         // 使用 COALESCE(width, 0) 防止因为数据库里 width 是 NULL 而导致图片消失
         // Merge low into medium logic
@@ -134,6 +135,12 @@ export async function GET(request: Request) {
     });
   } catch (error: unknown) {
     console.error('API Error:', error);
+
+    // 数据库错误返回特定错误码
+    if (error instanceof DatabaseError) {
+      return errorResponse(error.message, 503, undefined, error.code);
+    }
+
     return errorResponse('Failed to fetch images', 500, getErrorMessage(error));
   }
 }
