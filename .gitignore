@@ -25,6 +25,7 @@
 *.db
 *.db-wal
 *.db-shm
+images.db
 
 # === 缓存目录 ===
 /cache/
