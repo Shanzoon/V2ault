@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import type { Image, GridSize, DeleteConfirmation } from '../types';
 
@@ -22,6 +22,7 @@ interface UseKeyboardShortcutsOptions {
   onBatchDelete: () => void;
   onSingleDelete: () => void;
   executeDelete: () => void;
+  onTitleClick: () => void;
 }
 
 export function useKeyboardShortcuts({
@@ -42,7 +43,12 @@ export function useKeyboardShortcuts({
   onBatchDelete,
   onSingleDelete,
   executeDelete,
+  onTitleClick,
 }: UseKeyboardShortcutsOptions) {
+  // 防抖：防止快速切换视角
+  const lastGridChangeRef = useRef<number>(0);
+  const GRID_CHANGE_DEBOUNCE = 300; // ms
+
   const handleNextImage = useCallback(() => {
     if (!selectedImage) return;
     const currentIndex = images.findIndex(img => img.id === selectedImage.id);
@@ -63,19 +69,31 @@ export function useKeyboardShortcuts({
     const handleKeyDown = (e: KeyboardEvent) => {
       // Global Grid Size Shortcuts (Q/W/E) - Only work when not editing text
       if (!isEditingPrompt && !selectedImage && !deleteConfirmation.show) {
+        const now = Date.now();
         if (e.key.toLowerCase() === 'q') {
+          if (now - lastGridChangeRef.current < GRID_CHANGE_DEBOUNCE) return;
+          lastGridChangeRef.current = now;
           setGridSize('small');
           toast('Small Grid View');
           return;
         }
         if (e.key.toLowerCase() === 'w') {
+          if (now - lastGridChangeRef.current < GRID_CHANGE_DEBOUNCE) return;
+          lastGridChangeRef.current = now;
           setGridSize('medium');
           toast('Medium Grid View');
           return;
         }
         if (e.key.toLowerCase() === 'e') {
+          if (now - lastGridChangeRef.current < GRID_CHANGE_DEBOUNCE) return;
+          lastGridChangeRef.current = now;
           setGridSize('large');
           toast('Large Grid View');
+          return;
+        }
+        if (e.key.toLowerCase() === 'r') {
+          onTitleClick();
+          toast('Shuffled');
           return;
         }
       }
@@ -147,6 +165,7 @@ export function useKeyboardShortcuts({
     onBatchDelete,
     onSingleDelete,
     executeDelete,
+    onTitleClick,
     handleNextImage,
     handlePrevImage,
   ]);

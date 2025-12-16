@@ -7,3 +7,4 @@ export { DeleteConfirmModal } from './DeleteConfirmModal';
 export { UploadModal } from './UploadModal';
 export { UploadProgress } from './UploadProgress';
 export { DatabaseErrorBanner } from './DatabaseErrorBanner';
+export { ScrollToTop } from './ScrollToTop';

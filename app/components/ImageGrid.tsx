@@ -32,12 +32,12 @@ export function ImageGrid({
   const getGridClasses = () => {
     switch (gridSize) {
       case 'small':
-        return 'grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-0.5';
+        return 'grid-cols-3 md:grid-cols-5 lg:grid-cols-7 gap-1';
       case 'large':
-        return 'grid-cols-1 md:grid-cols-2 gap-2';
+        return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1';
       case 'medium':
       default:
-        return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-1';
+        return 'grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-1';
     }
   };
 
@@ -45,7 +45,9 @@ export function ImageGrid({
     <>
       {/* Loading Initial (Skeleton) */}
       {isLoading && images.length === 0 ? (
-        <div className={`w-full px-2 md:px-12 2xl:max-w-[1800px] grid ${getGridClasses()} auto-rows-min grid-flow-dense`}>
+        <div className={`w-full mx-auto md:ml-[80px]  // 仅md及以上屏幕加80px左外边距，手机端无
+                px-4 md:px-16 lg:px-20 2xl:max-w-[1650px] 
+                grid ${getGridClasses()} auto-rows-min grid-flow-dense`}>
           {Array.from({ length: 18 }).map((_, i) => (
             <div
               key={i}
@@ -56,7 +58,9 @@ export function ImageGrid({
           ))}
         </div>
       ) : (
-        <div className={`w-full px-2 md:px-12 2xl:max-w-[1800px] grid ${getGridClasses()} auto-rows-min grid-flow-dense`}>
+        <div className={`w-full mx-auto md:ml-[80px]  // 仅md及以上屏幕加80px左外边距，手机端无
+                px-4 md:px-16 lg:px-20 2xl:max-w-[1650px] 
+                grid ${getGridClasses()} auto-rows-min grid-flow-dense`}>
           <AnimatePresence mode="popLayout">
             {images.map((img) => (
               <ImageCard
@@ -67,7 +71,7 @@ export function ImageGrid({
                 onToggleSelection={onToggleSelection}
                 onImageClick={onImageClick}
                 onToggleLiked={onToggleLiked}
-                gridSize={gridSize}
+                loadHighRes={gridSize === 'large'}
               />
             ))}
           </AnimatePresence>

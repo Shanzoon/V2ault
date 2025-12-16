@@ -42,5 +42,5 @@ export interface ImageCardProps {
   onToggleSelection: (id: number) => void;
   onImageClick: (img: Image) => void;
   onToggleLiked?: (id: number) => void;
-  gridSize: GridSize;
+  loadHighRes?: boolean;
 }

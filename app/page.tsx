@@ -14,6 +14,7 @@ import {
   UploadModal,
   UploadProgress,
   DatabaseErrorBanner,
+  ScrollToTop,
 } from './components';
 
 export default function Home() {
@@ -60,7 +61,7 @@ export default function Home() {
   const { isAdmin, login, logout } = useAuth();
 
   // UI State
-  const [gridSize, setGridSize] = useState<GridSize>('small');
+  const [gridSize, setGridSize] = useState<GridSize>('medium');
   const [selectedImage, setSelectedImage] = useState<Image | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -227,10 +228,17 @@ export default function Home() {
     onBatchDelete: handleBatchDelete,
     onSingleDelete: handleSingleDelete,
     executeDelete,
+    onTitleClick: handleTitleClick,
   });
 
   return (
-    <div className="flex h-screen overflow-hidden bg-black text-gray-200 font-sans selection:bg-indigo-500/30">
+    <div className="flex h-screen overflow-hidden text-gray-200 font-sans selection:bg-indigo-500/30 relative">
+      {/* Aurora Background */}
+      <div className="fixed inset-0 pointer-events-none z-[1] overflow-hidden">
+        <div className="absolute top-0 left-0 w-[600px] h-[400px] bg-orange-500/18 rounded-full blur-[100px] -translate-y-1/2 pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-cyan-500/25 rounded-full blur-[100px] translate-x-1/2 translate-y-1/2 pointer-events-none" />
+      </div>
+
       {/* Mobile Header */}
       <MobileHeader
         totalAssets={totalAssets}
@@ -271,7 +279,7 @@ export default function Home() {
       {/* Main Content */}
       <main
         ref={scrollContainerRef}
-        className="flex-1 h-full overflow-y-auto relative bg-black p-4 md:p-10 lg:p-12 scrollbar-hide md:scrollbar-thin md:scrollbar-thumb-white/10 md:scrollbar-track-transparent pt-16 md:pt-10"
+        className="flex-1 h-full overflow-y-auto relative z-[2] p-4 md:p-10 lg:p-12 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent pt-16 md:pt-10"
       >
         <div className="max-w-[2000px] mx-auto min-h-full pb-20">
           {/* Error State */}
@@ -333,6 +341,9 @@ export default function Home() {
         onCancel={uploadQueue.cancelUpload}
         onClear={uploadQueue.clearQueue}
       />
+
+      {/* Scroll To Top Button */}
+      <ScrollToTop scrollContainerRef={scrollContainerRef} />
     </div>
   );
 }

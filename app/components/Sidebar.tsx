@@ -118,7 +118,7 @@ export function Sidebar({
 
       {/* Sidebar Content */}
       <aside
-        className={`fixed lg:sticky top-0 left-0 h-full w-[280px] bg-[#0a0a0a] border-r border-white/5 flex flex-col z-50 transition-transform duration-300 ease-out ${
+        className={`fixed lg:sticky top-0 left-0 h-full w-[280px] bg-transparent border-r border-white/5 flex flex-col z-50 transition-transform duration-300 ease-out ${
           isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
@@ -140,9 +140,9 @@ export function Sidebar({
           <button
             onClick={onUploadClick}
             disabled={!isAdmin}
-            className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold uppercase tracking-wide transition-all shadow-lg ${
+            className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold uppercase tracking-wide transition-all ${
               isAdmin
-                ? 'bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 hover:to-cyan-400 text-white shadow-cyan-900/20'
+                ? 'bg-black/60 backdrop-blur-xl border border-white/10 hover:bg-white/10 text-white shadow-lg'
                 : 'bg-gray-700/50 text-gray-500 cursor-not-allowed shadow-none'
             }`}
           >

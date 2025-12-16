@@ -446,7 +446,10 @@ export function ImageModal({
                       {selectedImage.width} × {selectedImage.height}
                     </span>
                     <span>
-                      {Math.round((selectedImage.width * selectedImage.height) / 1000000 * 10) / 10} MP
+                      {selectedImage.width && selectedImage.height
+                        ? `${Math.round((selectedImage.width * selectedImage.height) / 1000000 * 10) / 10} MP`
+                        : '-'
+                      }
                     </span>
                   </div>
                 </div>

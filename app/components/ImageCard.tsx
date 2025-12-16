@@ -36,7 +36,7 @@ export const ImageCard = memo(function ImageCard({
   onToggleSelection,
   onImageClick,
   onToggleLiked,
-  gridSize,
+  loadHighRes,
 }: ImageCardProps) {
   const ratio = (img.width && img.height) ? (img.width / img.height) : 1;
   let spanClass = 'col-span-1 row-span-1';
@@ -62,11 +62,15 @@ export const ImageCard = memo(function ImageCard({
 
   return (
     <motion.div
-      layout
+      layout="position"
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.5 }}
-      transition={{ duration: 0.3 }}
+      transition={{
+        layout: { duration: 0.25, ease: "easeOut" },
+        opacity: { duration: 0.2 },
+        scale: { duration: 0.2 }
+      }}
       className={`relative group bg-gray-900 overflow-hidden ${spanClass} ${
         isSelected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-black' : ''
       }`}
@@ -145,7 +149,7 @@ export const ImageCard = memo(function ImageCard({
         />
 
         {/* Layer 3: Large Image (High Res) */}
-        {gridSize === 'large' && (
+        {loadHighRes && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={largeUrl}
@@ -172,9 +176,9 @@ export const ImageCard = memo(function ImageCard({
 }, (prev, next) => {
   return (
     prev.img.id === next.img.id &&
-    prev.img.like_count === next.img.like_count && // [NEW] Check like_count for re-render
+    prev.img.like_count === next.img.like_count &&
     prev.isSelectionMode === next.isSelectionMode &&
     prev.isSelected === next.isSelected &&
-    prev.gridSize === next.gridSize
+    prev.loadHighRes === next.loadHighRes
   );
 });
