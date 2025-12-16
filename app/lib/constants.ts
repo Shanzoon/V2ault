@@ -24,3 +24,25 @@ export const THUMBNAIL_QUALITY = 80;
 
 // 缓存时间（1年）
 export const CACHE_MAX_AGE = 31536000;
+
+// ============================================
+// 分类系统常量
+// ============================================
+
+// 模型基底选项
+export const MODEL_BASES = [
+  'SD系列',
+  'Flux.1',
+  'Midjourney',
+  'Nano-banana',
+  'Qwen-image',
+  'Z-image',
+  'other',
+] as const;
+
+// 风格大类选项
+export const STYLE_SOURCES = ['2D', '3D', 'Real'] as const;
+
+// 类型导出
+export type ModelBase = typeof MODEL_BASES[number];
+export type StyleSource = typeof STYLE_SOURCES[number];

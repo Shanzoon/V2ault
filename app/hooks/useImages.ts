@@ -4,12 +4,16 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useInView } from 'react-intersection-observer';
 import { useDebounce } from 'use-debounce';
 import type { Image, ApiResponse, SortMode } from '../types';
+import type { StyleSource } from '../lib/constants';
 
 // 错误类型定义
 export interface ApiError {
   code: 'DB_NOT_FOUND' | 'DB_NOT_INITIALIZED' | 'NETWORK_ERROR' | 'UNKNOWN_ERROR';
   message: string;
 }
+
+// 风格聚合类型
+export type AvailableStyles = Record<StyleSource, string[]>;
 
 interface UseImagesOptions {
   limit?: number;
@@ -33,6 +37,11 @@ export function useImages(options: UseImagesOptions = {}) {
   const [selectedResolutions, setSelectedResolutions] = useState<string[]>([]);
   const [likedOnly, setLikedOnly] = useState(false);
 
+  // 新增筛选状态
+  const [selectedModelBases, setSelectedModelBases] = useState<string[]>([]);
+  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
+  const [activeStyleTab, setActiveStyleTab] = useState<StyleSource>('2D');
+
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const { ref: loadMoreRef, inView } = useInView({
@@ -55,7 +64,7 @@ export function useImages(options: UseImagesOptions = {}) {
   // Listen for filter changes
   useEffect(() => {
     resetGallery();
-  }, [debouncedSearch, selectedResolutions, sortMode, randomSeed, likedOnly, resetGallery]);
+  }, [debouncedSearch, selectedResolutions, sortMode, randomSeed, likedOnly, selectedModelBases, selectedStyles, resetGallery]);
 
   // Fetch Logic
   const fetchImages = useCallback(async () => {
@@ -78,8 +87,10 @@ export function useImages(options: UseImagesOptions = {}) {
       const resolutionsParam = selectedResolutions.length > 0 ? `&resolutions=${selectedResolutions.join(',')}` : '';
       const seedParam = sortMode.startsWith('random') && randomSeed !== null ? `&seed=${randomSeed}` : '';
       const likedParam = likedOnly ? '&liked=true' : '';
+      const modelBasesParam = selectedModelBases.length > 0 ? `&modelBases=${selectedModelBases.join(',')}` : '';
+      const stylesParam = selectedStyles.length > 0 ? `&styles=${selectedStyles.join(',')}` : '';
 
-      const url = `/api/images/list?page=${page}&limit=${limit}&search=${encodeURIComponent(debouncedSearch)}&sort=${sortMode}${resolutionsParam}${seedParam}${likedParam}`;
+      const url = `/api/images/list?page=${page}&limit=${limit}&search=${encodeURIComponent(debouncedSearch)}&sort=${sortMode}${resolutionsParam}${seedParam}${likedParam}${modelBasesParam}${stylesParam}`;
 
       const res = await fetch(url, { signal: controller.signal });
 
@@ -132,7 +143,7 @@ export function useImages(options: UseImagesOptions = {}) {
         setIsLoading(false);
       }
     }
-  }, [page, debouncedSearch, sortMode, selectedResolutions, randomSeed, hasMore, limit, likedOnly]);
+  }, [page, debouncedSearch, sortMode, selectedResolutions, randomSeed, hasMore, limit, likedOnly, selectedModelBases, selectedStyles]);
 
   // Trigger fetch
   useEffect(() => {
@@ -151,6 +162,23 @@ export function useImages(options: UseImagesOptions = {}) {
       prev.includes(res) ? prev.filter(r => r !== res) : [...prev, res]
     );
   }, []);
+
+  // 切换模型基底选中状态
+  const toggleModelBase = useCallback((modelBase: string) => {
+    setSelectedModelBases(prev =>
+      prev.includes(modelBase) ? prev.filter(m => m !== modelBase) : [...prev, modelBase]
+    );
+  }, []);
+
+  // 切换风格选中状态
+  const toggleStyle = useCallback((style: string) => {
+    setSelectedStyles(prev =>
+      prev.includes(style) ? prev.filter(s => s !== style) : [...prev, style]
+    );
+  }, []);
+
+  // 注意：availableStyles 已移至独立的 useStyles Hook
+  // 这样可以在应用启动时获取全局风格列表，而不是只从已加载的图片中计算
 
   const shuffleImages = useCallback(() => {
     const newSeed = Math.floor(Math.random() * 1000000);
@@ -215,7 +243,7 @@ export function useImages(options: UseImagesOptions = {}) {
 
   return {
     // Data
-    images,
+    images,  // 直接返回 images（已由服务端过滤）
     totalAssets,
     isLoading,
     hasMore,
@@ -230,6 +258,16 @@ export function useImages(options: UseImagesOptions = {}) {
     toggleResolution,
     likedOnly,
     setLikedOnly,
+
+    // Model Base Filter
+    selectedModelBases,
+    toggleModelBase,
+
+    // Style Filter
+    selectedStyles,
+    toggleStyle,
+    activeStyleTab,
+    setActiveStyleTab,
 
     // Sort
     sortMode,

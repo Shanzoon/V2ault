@@ -1,9 +1,20 @@
 ﻿'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, X, Grid, LayoutGrid, Maximize, Clock, Layers, Download, Trash2, Check, Upload, Lock, LogOut } from 'lucide-react';
+import { Search, X, Grid, LayoutGrid, Maximize, Shuffle, Clock, Download, Trash2, Check, Upload, Lock, LogOut, ChevronDown, ChevronUp } from 'lucide-react';
 import type { GridSize, SortMode } from '../types';
+import { MODEL_BASES, STYLE_SOURCES } from '../lib/constants';
+import type { StyleSource } from '../lib/constants';
+import type { AvailableStyles } from '../hooks/useImages';
+
+// 缩略图尺寸循环顺序
+const GRID_SIZE_CYCLE: GridSize[] = ['small', 'medium', 'large'];
+const GRID_SIZE_ICONS = {
+  small: Grid,
+  medium: LayoutGrid,
+  large: Maximize,
+};
 
 interface SidebarProps {
   // Data
@@ -16,6 +27,17 @@ interface SidebarProps {
   toggleResolution: (res: string) => void;
   likedOnly: boolean;
   setLikedOnly: (value: boolean) => void;
+
+  // Model Base Filter
+  selectedModelBases: string[];
+  toggleModelBase: (modelBase: string) => void;
+
+  // Style Filter
+  selectedStyles: string[];
+  toggleStyle: (style: string) => void;
+  activeStyleTab: StyleSource;
+  setActiveStyleTab: (tab: StyleSource) => void;
+  availableStyles: AvailableStyles;
 
   // View
   gridSize: GridSize;
@@ -59,6 +81,13 @@ export function Sidebar({
   toggleResolution,
   likedOnly,
   setLikedOnly,
+  selectedModelBases,
+  toggleModelBase,
+  selectedStyles,
+  toggleStyle,
+  activeStyleTab,
+  setActiveStyleTab,
+  availableStyles,
   gridSize,
   setGridSize,
   sortMode,
@@ -84,6 +113,42 @@ export function Sidebar({
   const [loginError, setLoginError] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  // 点击反馈状态
+  const [gridClickFeedback, setGridClickFeedback] = useState(false);
+  const [sortClickFeedback, setSortClickFeedback] = useState(false);
+
+  // 折叠面板状态
+  const [expandedSections, setExpandedSections] = useState({
+    modelBase: true,
+    style: true,
+    resolution: true,
+  });
+
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  // 监听键盘快捷键，显示反馈
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 如果正在输入框中，不触发反馈
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      if (e.key.toLowerCase() === 'q') {
+        setGridClickFeedback(true);
+        setTimeout(() => setGridClickFeedback(false), 150);
+      }
+      if (e.key.toLowerCase() === 'r') {
+        setSortClickFeedback(true);
+        setTimeout(() => setSortClickFeedback(false), 150);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleLogin = async () => {
     if (!password.trim()) return;
     setIsLoggingIn(true);
@@ -101,6 +166,30 @@ export function Sidebar({
   const handleLogout = async () => {
     await onLogout();
   };
+  // 缩略图切换函数（带点击反馈）
+  const cycleGridSize = () => {
+    setGridClickFeedback(true);
+    setTimeout(() => setGridClickFeedback(false), 150);
+    const currentIndex = GRID_SIZE_CYCLE.indexOf(gridSize);
+    const nextIndex = (currentIndex + 1) % GRID_SIZE_CYCLE.length;
+    setGridSize(GRID_SIZE_CYCLE[nextIndex]);
+  };
+
+  // 排序切换函数（带点击反馈）
+  const toggleSortMode = () => {
+    setSortClickFeedback(true);
+    setTimeout(() => setSortClickFeedback(false), 150);
+    if (sortMode === 'date_desc') {
+      setSortMode('random_shuffle');
+      setRandomSeed(Math.floor(Math.random() * 1000000));
+    } else {
+      setSortMode('date_desc');
+    }
+  };
+
+  const GridIcon = GRID_SIZE_ICONS[gridSize];
+  const isRandomMode = sortMode === 'random_shuffle' || sortMode === 'random_block';
+
   return (
     <>
       {/* Mobile Overlay */}
@@ -135,24 +224,53 @@ export function Sidebar({
           </p>
         </div>
 
-        {/* Upload Button */}
+        {/* Action Bar: Upload + Grid Size + Shuffle */}
         <div className="px-6 py-4 border-b border-white/5">
-          <button
-            onClick={onUploadClick}
-            disabled={!isAdmin}
-            className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold uppercase tracking-wide transition-all ${
-              isAdmin
-                ? 'bg-black/60 backdrop-blur-xl border border-white/10 hover:bg-white/10 text-white shadow-lg'
-                : 'bg-gray-700/50 text-gray-500 cursor-not-allowed shadow-none'
-            }`}
-          >
-            <Upload className="w-4 h-4" />
-            上传图片
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Upload Button */}
+            <button
+              onClick={onUploadClick}
+              disabled={!isAdmin}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                isAdmin
+                  ? 'bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 text-white'
+                  : 'bg-white/5 border border-white/10 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              <Upload className="w-4 h-4" />
+              上传
+            </button>
+
+            {/* Grid Size Toggle (Q) */}
+            <button
+              onClick={cycleGridSize}
+              className={`p-2.5 rounded-xl border transition-all duration-150 ${
+                gridClickFeedback
+                  ? 'bg-orange-500/30 border-orange-500/50 text-orange-300 scale-95'
+                  : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 text-gray-400 hover:text-white'
+              }`}
+              title={`布局: ${gridSize} (Q)`}
+            >
+              <GridIcon className="w-4 h-4" />
+            </button>
+
+            {/* Sort Toggle Button (顺序/随机) */}
+            <button
+              onClick={toggleSortMode}
+              className={`p-2.5 rounded-xl border transition-all duration-150 ${
+                sortClickFeedback
+                  ? 'bg-orange-500/30 border-orange-500/50 text-orange-300 scale-95'
+                  : 'bg-white/5 border-white/10 hover:bg-white/10 hover:border-white/20 text-gray-400 hover:text-white'
+              }`}
+              title={isRandomMode ? '随机排列 (点击切换为顺序)' : '顺序排列 (点击切换为随机)'}
+            >
+              {isRandomMode ? <Shuffle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Area */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
           {/* Search */}
           <div className="relative group">
             <input
@@ -173,75 +291,172 @@ export function Sidebar({
             )}
           </div>
 
-          {/* View Toggle */}
+          {/* Style Filter - 移到搜索框下方 */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Layout</h2>
-            </div>
-            <div className="flex gap-2 p-1 bg-black/20 rounded-xl border border-white/5">
-              <button
-                onClick={() => setGridSize('small')}
-                className={`flex-1 flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
-                  gridSize === 'small'
-                    ? 'bg-white/10 text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
-                }`}
-              >
-                <Grid className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setGridSize('medium')}
-                className={`flex-1 flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
-                  gridSize === 'medium'
-                    ? 'bg-white/10 text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
-                }`}
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setGridSize('large')}
-                className={`flex-1 flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
-                  gridSize === 'large'
-                    ? 'bg-white/10 text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
-                }`}
-              >
-                <Maximize className="w-4 h-4" />
-              </button>
-            </div>
+            <button
+              onClick={() => toggleSection('style')}
+              className="w-full flex items-center justify-between group"
+            >
+              <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] group-hover:text-gray-400 transition-colors">
+                Style
+                {selectedStyles.length > 0 && (
+                  <span className="ml-2 text-orange-400">({selectedStyles.length})</span>
+                )}
+              </h2>
+              {expandedSections.style ? (
+                <ChevronUp className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
+              )}
+            </button>
+            <AnimatePresence>
+              {expandedSections.style && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  {/* Tab 栏 */}
+                  <div className="flex gap-1 p-1 bg-black/30 rounded-lg mt-2">
+                    {STYLE_SOURCES.map((source) => (
+                      <button
+                        key={source}
+                        onClick={() => setActiveStyleTab(source)}
+                        className={`flex-1 px-3 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${
+                          activeStyleTab === source
+                            ? 'bg-white/10 text-white'
+                            : 'text-gray-500 hover:text-gray-300'
+                        }`}
+                      >
+                        {source}
+                        {availableStyles[source].length > 0 && (
+                          <span className="ml-1 text-gray-500">
+                            {availableStyles[source].length}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 标签云 */}
+                  <div className="flex flex-wrap gap-2 pt-3 max-h-[200px] overflow-y-auto custom-scrollbar">
+                    {availableStyles[activeStyleTab].length > 0 ? (
+                      availableStyles[activeStyleTab].map((style) => (
+                        <button
+                          key={style}
+                          onClick={() => toggleStyle(style)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
+                            selectedStyles.includes(style)
+                              ? 'bg-orange-500/80 text-white shadow-[0_0_10px_rgba(249,115,22,0.3)]'
+                              : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-300 border border-white/5'
+                          }`}
+                        >
+                          {style}
+                        </button>
+                      ))
+                    ) : (
+                      <p className="text-xs text-gray-600 italic">暂无 {activeStyleTab} 风格数据</p>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
-          {/* Sort Options */}
+          {/* Model Base Filter */}
           <div className="space-y-2">
-            <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Sort</h2>
-            <div className="flex gap-2 p-1 bg-black/20 rounded-xl border border-white/5">
-              <button
-                onClick={() => setSortMode('date_desc')}
-                className={`flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
-                  sortMode === 'date_desc'
-                    ? 'bg-white/10 text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
-                }`}
-                title="Latest"
-              >
-                <Clock className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => {
-                  setSortMode('random_block');
-                  setRandomSeed(Math.floor(Math.random() * 1000000));
-                }}
-                className={`flex items-center justify-center p-2 rounded-lg transition-all duration-300 ${
-                  sortMode === 'random_block'
-                    ? 'bg-white/10 text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
-                }`}
-                title="Random Batch"
-              >
-                <Layers className="w-4 h-4" />
-              </button>
-            </div>
+            <button
+              onClick={() => toggleSection('modelBase')}
+              className="w-full flex items-center justify-between group"
+            >
+              <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] group-hover:text-gray-400 transition-colors">
+                Model Base
+                {selectedModelBases.length > 0 && (
+                  <span className="ml-2 text-orange-400">({selectedModelBases.length})</span>
+                )}
+              </h2>
+              {expandedSections.modelBase ? (
+                <ChevronUp className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
+              )}
+            </button>
+            <AnimatePresence>
+              {expandedSections.modelBase && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {MODEL_BASES.map((base) => (
+                      <button
+                        key={base}
+                        onClick={() => toggleModelBase(base)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
+                          selectedModelBases.includes(base)
+                            ? 'bg-orange-500/80 text-white shadow-[0_0_10px_rgba(249,115,22,0.3)]'
+                            : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-300 border border-white/5'
+                        }`}
+                      >
+                        {base}
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Resolution Filter */}
+          <div className="space-y-2">
+            <button
+              onClick={() => toggleSection('resolution')}
+              className="w-full flex items-center justify-between group"
+            >
+              <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] group-hover:text-gray-400 transition-colors">
+                Resolution
+                {selectedResolutions.length > 0 && (
+                  <span className="ml-2 text-orange-400">({selectedResolutions.length})</span>
+                )}
+              </h2>
+              {expandedSections.resolution ? (
+                <ChevronUp className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
+              )}
+            </button>
+            <AnimatePresence>
+              {expandedSections.resolution && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {['medium', 'high', 'ultra'].map((res) => (
+                      <button
+                        key={res}
+                        onClick={() => toggleResolution(res)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all duration-200 ${
+                          selectedResolutions.includes(res)
+                            ? 'bg-white/15 text-white shadow-[0_0_10px_rgba(255,255,255,0.1)]'
+                            : 'bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300 border border-white/5'
+                        }`}
+                      >
+                        {res}
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Liked Filter */}
@@ -249,8 +464,8 @@ export function Sidebar({
             <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Filter</h2>
              <label className="flex items-center gap-3 cursor-pointer group p-2 rounded-xl border border-transparent hover:bg-white/5 transition-all">
                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all duration-300 ${
-                 likedOnly 
-                   ? 'bg-red-500 border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.3)]' 
+                 likedOnly
+                   ? 'bg-red-500 border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.3)]'
                    : 'border-white/20 bg-white/5 group-hover:border-white/40'
                }`}>
                  {likedOnly && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
@@ -260,33 +475,13 @@ export function Sidebar({
                }`}>
                  Liked
                </span>
-               <input 
-                 type="checkbox" 
-                 className="hidden" 
-                 checked={likedOnly} 
-                 onChange={(e) => setLikedOnly(e.target.checked)} 
+               <input
+                 type="checkbox"
+                 className="hidden"
+                 checked={likedOnly}
+                 onChange={(e) => setLikedOnly(e.target.checked)}
                />
              </label>
-          </div>
-
-          {/* Resolution Filter */}
-          <div className="space-y-2">
-            <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Resolution</h2>
-            <div className="flex flex-col gap-2">
-              {['medium', 'high', 'ultra'].map((res) => (
-                <button
-                  key={res}
-                  onClick={() => toggleResolution(res)}
-                  className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold tracking-wide uppercase transition-all duration-300 text-left border ${
-                    selectedResolutions.includes(res)
-                      ? 'bg-white/10 border-white/20 text-white shadow-[0_0_10px_rgba(255,255,255,0.1)]'
-                      : 'border-transparent bg-white/5 text-gray-500 hover:text-gray-300 hover:bg-white/10'
-                  }`}
-                >
-                  {res}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
 
@@ -297,8 +492,8 @@ export function Sidebar({
             <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Selection Mode</h2>
             <button
               onClick={() => setIsSelectionMode(!isSelectionMode)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-black ${
-                isSelectionMode ? 'bg-cyan-600' : 'bg-white/10'
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-black ${
+                isSelectionMode ? 'bg-orange-500' : 'bg-white/10'
               }`}
             >
               <span
@@ -411,7 +606,7 @@ export function Sidebar({
                 className={`w-full bg-black/40 border rounded-lg px-4 py-3 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-1 transition-all ${
                   loginError
                     ? 'border-red-500 focus:border-red-500 focus:ring-red-500'
-                    : 'border-white/10 focus:border-cyan-500 focus:ring-cyan-500'
+                    : 'border-white/10 focus:border-orange-500 focus:ring-orange-500'
                 }`}
                 autoFocus
               />
@@ -432,7 +627,7 @@ export function Sidebar({
                 <button
                   onClick={handleLogin}
                   disabled={isLoggingIn || !password.trim()}
-                  className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white py-2.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 bg-orange-500 hover:bg-orange-400 text-white py-2.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isLoggingIn ? '登录中...' : '登录'}
                 </button>

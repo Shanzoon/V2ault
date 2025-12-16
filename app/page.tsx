@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 
 
 import type { Image, GridSize, DeleteConfirmation } from './types';
-import { useImages, useSelection, useKeyboardShortcuts, useUploadQueue, useAuth } from './hooks';
+import { useImages, useSelection, useKeyboardShortcuts, useUploadQueue, useAuth, useStyles } from './hooks';
 import {
   ImageModal,
   ImageGrid,
@@ -33,6 +33,15 @@ export default function Home() {
     toggleResolution,
     likedOnly,
     setLikedOnly,
+    // Model Base Filter
+    selectedModelBases,
+    toggleModelBase,
+    // Style Filter
+    selectedStyles,
+    toggleStyle,
+    activeStyleTab,
+    setActiveStyleTab,
+    // Sort
     sortMode,
     setSortMode,
     randomSeed,
@@ -54,8 +63,14 @@ export default function Home() {
     clearSelection,
   } = useSelection();
 
-  // Upload Queue Hook
-  const uploadQueue = useUploadQueue(refetch);
+  // Styles Hook (全局风格列表)
+  const { availableStyles, refetchStyles } = useStyles();
+
+  // Upload Queue Hook (上传完成后同时刷新图片和风格列表)
+  const uploadQueue = useUploadQueue(useCallback(() => {
+    refetch();
+    refetchStyles();
+  }, [refetch, refetchStyles]));
 
   // Auth Hook
   const { isAdmin, login, logout } = useAuth();
@@ -74,6 +89,9 @@ export default function Home() {
     type: null,
     triggerRect: null,
   });
+
+  // 单图删除的临时存储
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
   // Upload Modal State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -149,6 +167,26 @@ export default function Home() {
     setDeleteConfirmation({ show: true, type: 'batch', triggerRect: rect });
   }, [selectedImageIds.size]);
 
+  // 单图下载
+  const handleSingleDownload = useCallback(async (id: number, filename: string) => {
+    try {
+      const response = await fetch(`/api/image/${id}`);
+      const blob = await response.blob();
+      const { saveAs } = await import('file-saver');
+      saveAs(blob, filename);
+    } catch (error) {
+      console.error('Error downloading image:', error);
+      alert('Failed to download image');
+    }
+  }, []);
+
+  // 从卡片菜单删除单图
+  const handleCardDelete = useCallback((id: number, e: React.MouseEvent) => {
+    setPendingDeleteId(id);
+    const rect = e.currentTarget.getBoundingClientRect();
+    setDeleteConfirmation({ show: true, type: 'single', triggerRect: rect });
+  }, []);
+
   const handleSingleDelete = useCallback((e?: React.MouseEvent) => {
     if (!selectedImage) return;
     const rect = e?.currentTarget.getBoundingClientRect() || singleDeleteBtnRef.current?.getBoundingClientRect();
@@ -175,39 +213,46 @@ export default function Home() {
         setIsDeleting(false);
         setDeleteConfirmation({ show: false, type: null });
       }
-    } else if (deleteConfirmation.type === 'single' && selectedImage) {
+    } else if (deleteConfirmation.type === 'single') {
+      // 优先使用 pendingDeleteId（从卡片菜单删除），否则使用 selectedImage（从 Modal 删除）
+      const targetId = pendingDeleteId || selectedImage?.id;
+      if (!targetId) return;
+
+      // 先计算下一张图片，再删除
+      let nextImage: Image | null = null;
+      if (selectedImage && selectedImage.id === targetId) {
+        const currentIndex = images.findIndex(img => img.id === targetId);
+        if (images.length > 1) {
+          if (currentIndex < images.length - 1) {
+            nextImage = images[currentIndex + 1];
+          } else if (currentIndex > 0) {
+            nextImage = images[currentIndex - 1];
+          }
+        }
+      }
+
       try {
         setIsDeleting(true);
-        const currentIndex = images.findIndex(img => img.id === selectedImage.id);
-        const res = await fetch(`/api/images/${selectedImage.id}`, {
+        const res = await fetch(`/api/images/${targetId}`, {
           method: 'DELETE',
         });
         if (!res.ok) throw new Error('Failed to delete');
-        removeImage(selectedImage.id);
 
-        // Navigate to next or previous image instead of closing
-        if (images.length > 1) {
-          if (currentIndex < images.length - 1) {
-            // Go to next image
-            setSelectedImage(images[currentIndex + 1]);
-          } else if (currentIndex > 0) {
-            // Go to previous image if at the end
-            setSelectedImage(images[currentIndex - 1]);
-          } else {
-            setSelectedImage(null);
-          }
-        } else {
-          setSelectedImage(null);
+        // 先设置下一张图片，再从数组中移除
+        if (selectedImage && selectedImage.id === targetId) {
+          setSelectedImage(nextImage);
         }
+        removeImage(targetId);
       } catch (error) {
         console.error('Error deleting image:', error);
         alert('Failed to delete image');
       } finally {
         setIsDeleting(false);
         setDeleteConfirmation({ show: false, type: null });
+        setPendingDeleteId(null);
       }
     }
-  }, [deleteConfirmation.type, selectedImageIds, selectedImage, images, removeImages, removeImage, clearSelection]);
+  }, [deleteConfirmation.type, selectedImageIds, selectedImage, pendingDeleteId, images, removeImages, removeImage, clearSelection]);
 
   // Keyboard Shortcuts
   useKeyboardShortcuts({
@@ -218,6 +263,7 @@ export default function Home() {
     isSelectionMode,
     selectedImageIds,
     images,
+    gridSize,
     setGridSize,
     setIsFullscreen,
     setSelectedImage,
@@ -236,7 +282,7 @@ export default function Home() {
       {/* Aurora Background */}
       <div className="fixed inset-0 pointer-events-none z-[1] overflow-hidden">
         <div className="absolute top-0 left-0 w-[600px] h-[400px] bg-orange-500/18 rounded-full blur-[100px] -translate-y-1/2 pointer-events-none" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-cyan-500/25 rounded-full blur-[100px] translate-x-1/2 translate-y-1/2 pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-[1200px] h-[200px] bg-cyan-500/25 rounded-full blur-[120px] translate-x-1/3 translate-y-1/2 pointer-events-none" />
       </div>
 
       {/* Mobile Header */}
@@ -255,11 +301,23 @@ export default function Home() {
         toggleResolution={toggleResolution}
         likedOnly={likedOnly}
         setLikedOnly={setLikedOnly}
+        // Model Base Filter
+        selectedModelBases={selectedModelBases}
+        toggleModelBase={toggleModelBase}
+        // Style Filter
+        selectedStyles={selectedStyles}
+        toggleStyle={toggleStyle}
+        activeStyleTab={activeStyleTab}
+        setActiveStyleTab={setActiveStyleTab}
+        availableStyles={availableStyles}
+        // View
         gridSize={gridSize}
         setGridSize={setGridSize}
+        // Sort
         sortMode={sortMode}
         setSortMode={setSortMode}
         setRandomSeed={setRandomSeed}
+        // Selection
         isSelectionMode={isSelectionMode}
         setIsSelectionMode={setIsSelectionMode}
         selectedImageIds={selectedImageIds}
@@ -267,10 +325,13 @@ export default function Home() {
         onBatchDelete={handleBatchDelete}
         isBulkDownloading={isBulkDownloading}
         isDeleting={isDeleting}
+        // Mobile
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
         onTitleClick={handleTitleClick}
+        // Upload
         onUploadClick={() => setIsUploadModalOpen(true)}
+        // Auth
         isAdmin={isAdmin}
         onLogin={login}
         onLogout={logout}
@@ -296,6 +357,9 @@ export default function Home() {
               onToggleSelection={toggleSelection}
               onImageClick={setSelectedImage}
               onToggleLiked={toggleLiked}
+              onDownload={handleSingleDownload}
+              onDelete={handleCardDelete}
+              isAdmin={isAdmin}
               loadMoreRef={loadMoreRef}
             />
           )}
@@ -313,6 +377,7 @@ export default function Home() {
         onUpdateImage={updateImage}
         onToggleLiked={toggleLiked}
         isAdmin={isAdmin}
+        isDeleting={isDeleting}
       />
 
       {/* Delete Confirmation Modal */}

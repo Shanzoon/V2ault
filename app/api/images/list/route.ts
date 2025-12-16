@@ -22,6 +22,8 @@ export async function GET(request: Request) {
     const seed = searchParams.get('seed');
     const resolutions = searchParams.get('resolutions') || '';
     const likedOnly = searchParams.get('liked') === 'true'; // [NEW]
+    const modelBases = searchParams.get('modelBases') || '';
+    const styles = searchParams.get('styles') || '';
 
     const offset = (page - 1) * limit;
 
@@ -87,6 +89,26 @@ export async function GET(request: Request) {
       // [NEW] Liked Filter
       if (likedOnly) {
         whereConditions.push('like_count > 0');
+      }
+
+      // Model Base 筛选
+      if (modelBases) {
+        const baseList = modelBases.split(',').map(b => b.trim()).filter(Boolean);
+        if (baseList.length > 0) {
+          const placeholders = baseList.map(() => '?').join(',');
+          whereConditions.push(`model_base IN (${placeholders})`);
+          params.push(...baseList);
+        }
+      }
+
+      // Style 筛选
+      if (styles) {
+        const styleList = styles.split(',').map(s => s.trim()).filter(Boolean);
+        if (styleList.length > 0) {
+          const placeholders = styleList.map(() => '?').join(',');
+          whereConditions.push(`style IN (${placeholders})`);
+          params.push(...styleList);
+        }
       }
 
       if (whereConditions.length > 0) {

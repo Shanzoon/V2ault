@@ -11,8 +11,10 @@ export interface UploadTask {
   metadata: {
     title: string;
     prompt: string;
+    model_base: string;
+    source: string;
     style: string;
-    modelBaseId: number | null;
+    imported_at: string;
   };
   status: 'pending' | 'uploading' | 'success' | 'error';
   error?: string;
@@ -73,8 +75,10 @@ export function useUploadQueue(onUploadComplete?: () => void): UseUploadQueueRet
             originalFilename: task.file.name,
             title: task.metadata.title,
             prompt: task.metadata.prompt,
+            model_base: task.metadata.model_base,
+            source: task.metadata.source,
             style: task.metadata.style,
-            modelBaseId: task.metadata.modelBaseId,
+            imported_at: task.metadata.imported_at,
           },
         ])
       );

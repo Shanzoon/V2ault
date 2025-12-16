@@ -11,25 +11,27 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { UploadTask } from '../hooks/useUploadQueue';
-
-// Model Base 预设选项
-const MODEL_BASE_OPTIONS = [
-  { id: 1, name: 'SD 1.5' },
-  { id: 2, name: 'SDXL' },
-  { id: 3, name: 'Flux' },
-  { id: 4, name: 'Illustrious' },
-  { id: 5, name: 'NoobAI' },
-  { id: 6, name: 'Pony' },
-];
+import { MODEL_BASES, STYLE_SOURCES } from '../lib/constants';
+import type { ModelBase, StyleSource } from '../lib/constants';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 const MAX_FILE_COUNT = 500; // 单次最大文件数量
 
+// 输入校验正则：只允许中文、英文、数字、空格、下划线、中划线、点号
+const VALID_INPUT_REGEX = /^[\u4e00-\u9fa5a-zA-Z0-9\s_.\-]*$/;
+
+// 校验输入是否合法
+const validateInput = (value: string): boolean => {
+  return VALID_INPUT_REGEX.test(value);
+};
+
 interface FileMetadata {
   title: string;
   prompt: string;
+  model_base: ModelBase | '';
+  source: StyleSource | '';
   style: string;
-  modelBaseId: number | null;
+  imported_at: string;
 }
 
 interface FileWithPreview {
@@ -52,8 +54,10 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 批量应用状态
+  const [batchModelBase, setBatchModelBase] = useState<ModelBase | ''>('');
+  const [batchSource, setBatchSource] = useState<StyleSource | ''>('');
   const [batchStyle, setBatchStyle] = useState('');
-  const [batchModelBaseId, setBatchModelBaseId] = useState<number | null>(null);
+  const [batchImportedAt, setBatchImportedAt] = useState('');
 
   // 处理文件选择
   const handleFilesSelected = useCallback(
@@ -84,8 +88,10 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
           metadata: {
             title: file.name.replace(/\.[^/.]+$/, ''),
             prompt: '',
+            model_base: '',
+            source: '',
             style: '',
-            modelBaseId: null,
+            imported_at: '',
           },
         });
       });
@@ -162,36 +168,83 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
 
   // 批量应用
   const applyBatch = useCallback(() => {
-    if (!batchStyle && batchModelBaseId === null) {
+    if (!batchModelBase && !batchSource && !batchStyle && !batchImportedAt) {
       toast.error('请至少填写一项批量应用内容');
       return;
     }
+
+    // 校验输入
+    if (batchStyle && !validateInput(batchStyle)) {
+      toast.error('风格只允许中文、英文、数字、空格、下划线、中划线、点号');
+      return;
+    }
+    if (batchImportedAt && !validateInput(batchImportedAt)) {
+      toast.error('风格参照只允许中文、英文、数字、空格、下划线、中划线、点号');
+      return;
+    }
+
     setFiles((prev) =>
       prev.map((f) => ({
         ...f,
         metadata: {
           ...f.metadata,
+          ...(batchModelBase ? { model_base: batchModelBase } : {}),
+          ...(batchSource ? { source: batchSource } : {}),
           ...(batchStyle ? { style: batchStyle } : {}),
-          ...(batchModelBaseId !== null ? { modelBaseId: batchModelBaseId } : {}),
+          ...(batchImportedAt ? { imported_at: batchImportedAt } : {}),
         },
       }))
     );
     toast.success('已批量应用设置');
-  }, [batchStyle, batchModelBaseId]);
+  }, [batchModelBase, batchSource, batchStyle, batchImportedAt]);
 
   // 开始上传（传递任务到全局队列）
   const handleUpload = useCallback(() => {
     if (files.length === 0) return;
 
-    // 构建任务列表
+    // 校验所有文件的必填字段和输入合法性
+    const invalidFiles: string[] = [];
+    const missingRequired: string[] = [];
+
+    for (const f of files) {
+      // 检查必填字段
+      if (!f.metadata.model_base || !f.metadata.source) {
+        missingRequired.push(f.metadata.title);
+      }
+      // 检查输入合法性
+      if (f.metadata.style && !validateInput(f.metadata.style)) {
+        invalidFiles.push(`${f.metadata.title} (风格)`);
+      }
+      if (f.metadata.imported_at && !validateInput(f.metadata.imported_at)) {
+        invalidFiles.push(`${f.metadata.title} (风格参照)`);
+      }
+    }
+
+    if (missingRequired.length > 0) {
+      const displayNames = missingRequired.slice(0, 3).join(', ');
+      const more = missingRequired.length > 3 ? ` 等 ${missingRequired.length} 个文件` : '';
+      toast.error(`请填写必填字段（模型基底、风格大类）: ${displayNames}${more}`);
+      return;
+    }
+
+    if (invalidFiles.length > 0) {
+      const displayNames = invalidFiles.slice(0, 3).join(', ');
+      const more = invalidFiles.length > 3 ? ` 等 ${invalidFiles.length} 个问题` : '';
+      toast.error(`输入包含非法字符（仅允许中文、英文、数字、空格、下划线、中划线、点号）: ${displayNames}${more}`);
+      return;
+    }
+
+    // 构建任务列表，字段映射到 API 字段名
     const tasks: UploadTask[] = files.map((f) => ({
       id: f.id,
       file: f.file,
       metadata: {
         title: f.metadata.title,
         prompt: f.metadata.prompt,
+        model_base: f.metadata.model_base,
+        source: f.metadata.source,
         style: f.metadata.style,
-        modelBaseId: f.metadata.modelBaseId,
+        imported_at: f.metadata.imported_at,
       },
       status: 'pending' as const,
     }));
@@ -202,8 +255,10 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
     // 重置状态
     setFiles([]);
     setSelectedFileId(null);
+    setBatchModelBase('');
+    setBatchSource('');
     setBatchStyle('');
-    setBatchModelBaseId(null);
+    setBatchImportedAt('');
 
     // 传递任务并关闭弹窗
     onStartUpload(tasks);
@@ -215,8 +270,10 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
     files.forEach((f) => URL.revokeObjectURL(f.preview));
     setFiles([]);
     setSelectedFileId(null);
+    setBatchModelBase('');
+    setBatchSource('');
     setBatchStyle('');
-    setBatchModelBaseId(null);
+    setBatchImportedAt('');
     onClose();
   }, [files, onClose]);
 
@@ -238,39 +295,47 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          {/* 遮罩层 */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* 遮罩层 - 增强毛玻璃效果 */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={handleClose}
-            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/70 backdrop-blur-xl"
           />
 
-          {/* 弹窗主体 */}
+          {/* 弹窗主体 - 毛玻璃质感 */}
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-[90vw] max-w-[1200px] h-[85vh] bg-[#1a1a1a] rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="relative w-full max-w-[1200px] h-[85vh] max-h-[900px] bg-[#0d0d0d]/90 backdrop-blur-2xl rounded-3xl border border-white/[0.08] shadow-[0_25px_50px_-12px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col"
           >
+            {/* 顶部装饰光晕 */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[200px] bg-orange-500/10 rounded-full blur-[100px] pointer-events-none" />
+
             {/* 弹窗头部 */}
-            <div className="flex items-center justify-between p-6 border-b border-white/10">
-              <div className="flex items-center gap-3">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Upload className="w-5 h-5" />
-                  上传图片
-                </h2>
-                {files.length > 0 && (
-                  <span className="text-xs text-gray-500 bg-white/10 px-2 py-1 rounded">
-                    {files.length} / {MAX_FILE_COUNT}
-                  </span>
-                )}
+            <div className="relative flex items-center justify-between px-8 py-5 border-b border-white/[0.06]">
+              <div className="flex items-center gap-4">
+                <div className="p-2.5 bg-orange-500/10 rounded-xl">
+                  <Upload className="w-5 h-5 text-orange-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-white tracking-tight">
+                    上传图片
+                  </h2>
+                  {files.length > 0 && (
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      已选择 <span className="text-orange-400 font-medium">{files.length}</span> / {MAX_FILE_COUNT} 张
+                    </p>
+                  )}
+                </div>
               </div>
               <button
                 onClick={handleClose}
-                className="p-2 text-gray-500 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                className="p-2.5 text-gray-500 hover:text-white hover:bg-white/[0.06] rounded-xl transition-all duration-200"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -278,9 +343,11 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
 
             {/* 数量警告 */}
             {files.length >= MAX_FILE_COUNT * 0.9 && (
-              <div className="mx-6 mt-4 px-4 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-yellow-500" />
-                <span className="text-xs text-yellow-400">
+              <div className="mx-8 mt-4 px-4 py-3 bg-amber-500/5 border border-amber-500/10 rounded-xl flex items-center gap-3">
+                <div className="p-1.5 bg-amber-500/10 rounded-lg">
+                  <AlertTriangle className="w-4 h-4 text-amber-400" />
+                </div>
+                <span className="text-sm text-amber-300/80">
                   接近数量上限 ({files.length}/{MAX_FILE_COUNT})
                 </span>
               </div>
@@ -289,7 +356,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
             {/* 弹窗内容 */}
             <div className="flex-1 flex overflow-hidden">
               {/* 左侧：文件列表/拖拽区 */}
-              <div className="w-1/2 border-r border-white/10 flex flex-col">
+              <div className="w-1/2 border-r border-white/[0.06] flex flex-col">
                 {files.length === 0 ? (
                   /* 拖拽上传区 */
                   <div
@@ -297,26 +364,37 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                     onClick={() => fileInputRef.current?.click()}
-                    className={`flex-1 m-6 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-colors ${
+                    className={`flex-1 m-6 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all duration-300 ${
                       isDragOver
-                        ? 'border-cyan-500 bg-cyan-500/10'
-                        : 'border-white/20 hover:border-white/40 hover:bg-white/5'
+                        ? 'border-orange-500/60 bg-orange-500/5 scale-[0.99]'
+                        : 'border-white/10 hover:border-white/20 hover:bg-white/[0.02]'
                     }`}
                   >
-                    <Upload
-                      className={`w-16 h-16 mb-4 ${isDragOver ? 'text-cyan-400' : 'text-gray-600'}`}
-                    />
-                    <p className="text-gray-400 text-lg font-medium mb-2">
+                    <div className={`p-5 rounded-2xl mb-5 transition-all duration-300 ${
+                      isDragOver ? 'bg-orange-500/10' : 'bg-white/[0.03]'
+                    }`}>
+                      <Upload
+                        className={`w-10 h-10 transition-colors duration-300 ${
+                          isDragOver ? 'text-orange-400' : 'text-gray-600'
+                        }`}
+                      />
+                    </div>
+                    <p className={`text-base font-medium mb-2 transition-colors duration-300 ${
+                      isDragOver ? 'text-orange-300' : 'text-gray-400'
+                    }`}>
                       拖拽图片到这里
                     </p>
                     <p className="text-gray-600 text-sm">
-                      单个文件最大 20MB，单次最多 {MAX_FILE_COUNT} 张
+                      或点击选择文件
+                    </p>
+                    <p className="text-gray-700 text-xs mt-4">
+                      单个文件最大 20MB · 单次最多 {MAX_FILE_COUNT} 张
                     </p>
                   </div>
                 ) : (
                   /* 文件预览列表 */
                   <div
-                    className="flex-1 overflow-y-auto p-4"
+                    className="flex-1 overflow-y-auto p-5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
@@ -326,10 +404,10 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
                         <div
                           key={f.id}
                           onClick={() => setSelectedFileId(f.id)}
-                          className={`relative aspect-square rounded-lg overflow-hidden cursor-pointer border-2 transition-all ${
+                          className={`group relative aspect-square rounded-xl overflow-hidden cursor-pointer transition-all duration-200 ${
                             selectedFileId === f.id
-                              ? 'border-cyan-500 shadow-[0_0_10px_rgba(6,182,212,0.3)]'
-                              : 'border-transparent hover:border-white/20'
+                              ? 'ring-2 ring-orange-500 ring-offset-2 ring-offset-[#0d0d0d] scale-[0.98]'
+                              : 'hover:ring-1 hover:ring-white/20 hover:scale-[0.98]'
                           }`}
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -339,14 +417,17 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
                             className="w-full h-full object-cover"
                             loading="lazy"
                           />
+                          {/* 选中指示器 */}
+                          {selectedFileId === f.id && (
+                            <div className="absolute inset-0 bg-orange-500/10 pointer-events-none" />
+                          )}
                           {/* 删除按钮 */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               removeFile(f.id);
                             }}
-                            className="absolute bottom-1 right-1 p-1 bg-black/60 hover:bg-red-500 text-white rounded transition-colors opacity-0 hover:opacity-100 group-hover:opacity-100"
-                            style={{ opacity: selectedFileId === f.id ? 1 : undefined }}
+                            className="absolute bottom-1.5 right-1.5 p-1.5 bg-black/70 hover:bg-red-500/90 text-white/70 hover:text-white rounded-lg transition-all duration-200 opacity-0 group-hover:opacity-100 backdrop-blur-sm"
                           >
                             <Trash2 className="w-3 h-3" />
                           </button>
@@ -356,9 +437,9 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
                       {files.length < MAX_FILE_COUNT && (
                         <div
                           onClick={() => fileInputRef.current?.click()}
-                          className="aspect-square rounded-lg border-2 border-dashed border-white/20 hover:border-white/40 flex items-center justify-center cursor-pointer transition-colors hover:bg-white/5"
+                          className="aspect-square rounded-xl border-2 border-dashed border-white/10 hover:border-orange-500/30 flex items-center justify-center cursor-pointer transition-all duration-200 hover:bg-orange-500/5 group"
                         >
-                          <Upload className="w-6 h-6 text-gray-600" />
+                          <Upload className="w-5 h-5 text-gray-600 group-hover:text-orange-400 transition-colors" />
                         </div>
                       )}
                     </div>
@@ -376,11 +457,11 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
               </div>
 
               {/* 右侧：元数据编辑 */}
-              <div className="w-1/2 flex flex-col overflow-hidden">
+              <div className="w-1/2 flex flex-col overflow-hidden bg-white/[0.01]">
                 {selectedFile ? (
-                  <div className="flex-1 overflow-y-auto p-6 space-y-5">
+                  <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
                     {/* 大图预览 */}
-                    <div className="aspect-video rounded-lg overflow-hidden bg-black/40 flex items-center justify-center">
+                    <div className="aspect-video rounded-2xl overflow-hidden bg-black/40 flex items-center justify-center ring-1 ring-white/[0.06]">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={selectedFile.preview}
@@ -391,7 +472,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
 
                     {/* 标题 */}
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">
                         标题
                       </label>
                       <input
@@ -400,15 +481,63 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
                         onChange={(e) =>
                           updateFileMetadata(selectedFile.id, { title: e.target.value })
                         }
-                        className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-sm text-white focus:border-cyan-500 focus:outline-none"
+                        className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:border-orange-500/50 focus:bg-white/[0.05] focus:outline-none transition-all duration-200"
                         placeholder="输入标题..."
                       />
                     </div>
 
-                    {/* 风格 */}
+                    {/* 模型基底 (model_base) - 必填 */}
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                        风格
+                      <label className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                        模型基底 <span className="text-orange-400">*</span>
+                      </label>
+                      <select
+                        value={selectedFile.metadata.model_base}
+                        onChange={(e) =>
+                          updateFileMetadata(selectedFile.id, {
+                            model_base: e.target.value as ModelBase | '',
+                          })
+                        }
+                        className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3 text-sm text-white focus:border-orange-500/50 focus:bg-white/[0.05] focus:outline-none transition-all duration-200 appearance-none cursor-pointer"
+                      >
+                        <option value="" className="bg-[#1a1a1a]">选择模型基底...</option>
+                        {MODEL_BASES.map((base) => (
+                          <option key={base} value={base} className="bg-[#1a1a1a]">
+                            {base}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 风格大类 (source) - 必填 */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                        风格大类 <span className="text-orange-400">*</span>
+                      </label>
+                      <div className="flex gap-2">
+                        {STYLE_SOURCES.map((src) => (
+                          <button
+                            key={src}
+                            type="button"
+                            onClick={() =>
+                              updateFileMetadata(selectedFile.id, { source: src })
+                            }
+                            className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                              selectedFile.metadata.source === src
+                                ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20'
+                                : 'bg-white/[0.03] border border-white/[0.06] text-gray-400 hover:bg-white/[0.06] hover:text-white'
+                            }`}
+                          >
+                            {src}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 具体风格 (style) */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        具体风格
                       </label>
                       <input
                         type="text"
@@ -416,14 +545,30 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
                         onChange={(e) =>
                           updateFileMetadata(selectedFile.id, { style: e.target.value })
                         }
-                        className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                        placeholder="如: Anime, Realistic, Fantasy..."
+                        className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:border-orange-500/50 focus:bg-white/[0.05] focus:outline-none transition-all duration-200"
+                        placeholder="例如：赛博朋克、水墨风"
+                      />
+                    </div>
+
+                    {/* 风格参照 (imported_at) */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        风格参照 (Style Ref/LoRA)
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedFile.metadata.imported_at}
+                        onChange={(e) =>
+                          updateFileMetadata(selectedFile.id, { imported_at: e.target.value })
+                        }
+                        className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:border-orange-500/50 focus:bg-white/[0.05] focus:outline-none transition-all duration-200"
+                        placeholder="输入风格参照或 LoRA 名称..."
                       />
                     </div>
 
                     {/* 提示词 */}
                     <div className="space-y-2">
-                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">
                         提示词
                       </label>
                       <textarea
@@ -431,77 +576,77 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
                         onChange={(e) =>
                           updateFileMetadata(selectedFile.id, { prompt: e.target.value })
                         }
-                        className="w-full h-32 bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-sm text-white focus:border-cyan-500 focus:outline-none resize-none"
+                        className="w-full h-32 bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:border-orange-500/50 focus:bg-white/[0.05] focus:outline-none resize-none transition-all duration-200 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"
                         placeholder="输入生成提示词..."
                       />
-                    </div>
-
-                    {/* Model Base */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                        Model Base
-                      </label>
-                      <select
-                        value={selectedFile.metadata.modelBaseId ?? ''}
-                        onChange={(e) =>
-                          updateFileMetadata(selectedFile.id, {
-                            modelBaseId: e.target.value ? Number(e.target.value) : null,
-                          })
-                        }
-                        className="w-full bg-black/40 border border-white/10 rounded-lg px-4 py-3 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                      >
-                        <option value="">选择模型基础...</option>
-                        {MODEL_BASE_OPTIONS.map((opt) => (
-                          <option key={opt.id} value={opt.id}>
-                            {opt.name}
-                          </option>
-                        ))}
-                      </select>
                     </div>
                   </div>
                 ) : (
                   <div className="flex-1 flex items-center justify-center">
-                    <div className="text-center text-gray-600">
-                      <ImageIcon className="w-16 h-16 mx-auto mb-4" />
-                      <p>选择一张图片编辑元数据</p>
+                    <div className="text-center">
+                      <div className="p-5 bg-white/[0.02] rounded-2xl mx-auto w-fit mb-4">
+                        <ImageIcon className="w-12 h-12 text-gray-700" />
+                      </div>
+                      <p className="text-gray-600 text-sm">选择一张图片编辑元数据</p>
                     </div>
                   </div>
                 )}
 
                 {/* 批量操作区 */}
                 {files.length > 1 && (
-                  <div className="p-4 border-t border-white/10 bg-black/20">
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+                  <div className="p-5 border-t border-white/[0.06] bg-black/20">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-4">
                       批量应用到所有图片
                     </p>
-                    <div className="flex gap-3">
-                      <input
-                        type="text"
-                        value={batchStyle}
-                        onChange={(e) => setBatchStyle(e.target.value)}
-                        placeholder="风格"
-                        className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                      />
-                      <select
-                        value={batchModelBaseId ?? ''}
-                        onChange={(e) =>
-                          setBatchModelBaseId(e.target.value ? Number(e.target.value) : null)
-                        }
-                        className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 focus:outline-none"
-                      >
-                        <option value="">Model Base</option>
-                        {MODEL_BASE_OPTIONS.map((opt) => (
-                          <option key={opt.id} value={opt.id}>
-                            {opt.name}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={applyBatch}
-                        className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors"
-                      >
-                        应用
-                      </button>
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <select
+                          value={batchModelBase}
+                          onChange={(e) => setBatchModelBase(e.target.value as ModelBase | '')}
+                          className="flex-1 bg-white/[0.03] border border-white/[0.06] rounded-xl px-3 py-2.5 text-sm text-white focus:border-orange-500/50 focus:outline-none transition-all duration-200 appearance-none cursor-pointer"
+                        >
+                          <option value="" className="bg-[#1a1a1a]">模型基底</option>
+                          {MODEL_BASES.map((base) => (
+                            <option key={base} value={base} className="bg-[#1a1a1a]">
+                              {base}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={batchSource}
+                          onChange={(e) => setBatchSource(e.target.value as StyleSource | '')}
+                          className="flex-1 bg-white/[0.03] border border-white/[0.06] rounded-xl px-3 py-2.5 text-sm text-white focus:border-orange-500/50 focus:outline-none transition-all duration-200 appearance-none cursor-pointer"
+                        >
+                          <option value="" className="bg-[#1a1a1a]">风格大类</option>
+                          {STYLE_SOURCES.map((src) => (
+                            <option key={src} value={src} className="bg-[#1a1a1a]">
+                              {src}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={batchStyle}
+                          onChange={(e) => setBatchStyle(e.target.value)}
+                          placeholder="具体风格"
+                          className="flex-1 bg-white/[0.03] border border-white/[0.06] rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:border-orange-500/50 focus:outline-none transition-all duration-200"
+                        />
+                        <input
+                          type="text"
+                          value={batchImportedAt}
+                          onChange={(e) => setBatchImportedAt(e.target.value)}
+                          placeholder="风格参照"
+                          className="flex-1 bg-white/[0.03] border border-white/[0.06] rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:border-orange-500/50 focus:outline-none transition-all duration-200"
+                        />
+                        <button
+                          onClick={applyBatch}
+                          className="px-5 py-2.5 bg-white/[0.06] hover:bg-orange-500/20 hover:text-orange-300 text-white rounded-xl text-sm font-medium transition-all duration-200 border border-transparent hover:border-orange-500/30"
+                        >
+                          应用
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -509,7 +654,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
             </div>
 
             {/* 弹窗底部 */}
-            <div className="p-6 border-t border-white/10 flex items-center justify-between">
+            <div className="relative px-8 py-5 border-t border-white/[0.06] flex items-center justify-between bg-black/20">
               <p className="text-sm text-gray-500">
                 {files.length === 0
                   ? '暂无待上传图片'
@@ -518,14 +663,14 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
               <div className="flex gap-3">
                 <button
                   onClick={handleClose}
-                  className="px-6 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors"
+                  className="px-6 py-2.5 bg-white/[0.04] hover:bg-white/[0.08] text-gray-300 hover:text-white rounded-xl text-sm font-medium transition-all duration-200 border border-white/[0.06]"
                 >
                   取消
                 </button>
                 <button
                   onClick={handleUpload}
                   disabled={files.length === 0}
-                  className="px-6 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-400 hover:to-orange-500 text-white rounded-xl text-sm font-semibold transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg shadow-orange-500/20 disabled:shadow-none"
                 >
                   <Upload className="w-4 h-4" />
                   开始上传

@@ -3,9 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { toast } from 'sonner';
-import { X, Download, Edit2, Save, Trash2, Copy, Layers, Heart } from 'lucide-react';
+import { X, Download, Edit2, Save, Trash2, Copy, Layers, Heart, Box, Palette, Sparkles } from 'lucide-react';
 import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { Swiper, SwiperSlide } from 'swiper/react';
+import type { Swiper as SwiperType } from 'swiper';
 import 'swiper/css';
 import type { Image } from '../types';
 
@@ -19,6 +20,7 @@ interface ImageModalProps {
   onUpdateImage: (img: Image) => void;
   onToggleLiked?: (id: number) => void;
   isAdmin?: boolean;
+  isDeleting?: boolean;
 }
 
 export function ImageModal({
@@ -31,6 +33,7 @@ export function ImageModal({
   onUpdateImage,
   onToggleLiked,
   isAdmin = false,
+  isDeleting = false,
 }: ImageModalProps) {
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editPromptValue, setEditPromptValue] = useState('');
@@ -39,6 +42,9 @@ export function ImageModal({
   const [slideDirection, setSlideDirection] = useState(0);
   const [isZoomed, setIsZoomed] = useState(false);
   const transformRef = useRef<ReactZoomPanPinchRef>(null);
+  const swiperRef = useRef<SwiperType | null>(null);
+  const isDeletingRef = useRef(false);
+  const prevImagesLengthRef = useRef(images.length);
   const dragControls = useDragControls();
 
   // Reset edit state when image selection changes
@@ -50,6 +56,31 @@ export function ImageModal({
       setEditPromptValue(selectedImage.prompt || '');
     }
   }, [selectedImage]);
+
+  // 检测图片删除，设置忽略期避免 onSlideChange 覆盖 selectedImage
+  useEffect(() => {
+    if (images.length < prevImagesLengthRef.current) {
+      // 检测到图片被删除，立即设置标志
+      isDeletingRef.current = true;
+      // 100ms 后重置，让 Swiper 完成内部更新
+      const timer = setTimeout(() => {
+        isDeletingRef.current = false;
+      }, 100);
+      prevImagesLengthRef.current = images.length;
+      return () => clearTimeout(timer);
+    }
+    prevImagesLengthRef.current = images.length;
+  }, [images.length]);
+
+  // Sync Swiper position when selectedImage changes externally (e.g., after delete)
+  useEffect(() => {
+    if (!selectedImage || !swiperRef.current) return;
+
+    const targetIndex = images.findIndex(img => img.id === selectedImage.id);
+    if (targetIndex !== -1 && swiperRef.current.activeIndex !== targetIndex) {
+      swiperRef.current.slideTo(targetIndex, 0);
+    }
+  }, [selectedImage, images]);
 
   // Smart Image Preloading
   useEffect(() => {
@@ -109,6 +140,17 @@ export function ImageModal({
     } catch (err) {
       console.error('Failed to copy prompt:', err);
       toast.error('Failed to copy prompt');
+    }
+  };
+
+  const handleCopyStyleRef = async () => {
+    if (!selectedImage?.style_ref) return;
+    try {
+      await navigator.clipboard.writeText(selectedImage.style_ref);
+      toast.success('Style reference copied');
+    } catch (err) {
+      console.error('Failed to copy style reference:', err);
+      toast.error('Failed to copy');
     }
   };
 
@@ -179,7 +221,13 @@ export function ImageModal({
           spaceBetween={0}
           slidesPerView={1}
           initialSlide={images.findIndex(img => img.id === selectedImage.id)}
+          onSwiper={(swiper) => {
+            swiperRef.current = swiper;
+          }}
           onSlideChange={(swiper) => {
+            // 使用 ref 检查删除状态（同步），避免 props 异步传递的时序问题
+            if (isDeletingRef.current) return;
+
             const img = images[swiper.activeIndex];
             if (img && img.id !== selectedImage.id) {
               setSelectedImage(img);
@@ -288,6 +336,59 @@ export function ImageModal({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="space-y-6 pt-2">
+                {/* Classification Tags */}
+                {(selectedImage.model_base || selectedImage.source || selectedImage.style) && (
+                  <div className="space-y-3">
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Classification
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {/* Model Base */}
+                      {selectedImage.model_base && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-xs font-medium text-cyan-400">
+                          <Box className="w-3 h-3" />
+                          {selectedImage.model_base}
+                        </span>
+                      )}
+                      {/* Source (2D/3D/Real) */}
+                      {selectedImage.source && selectedImage.source !== 'upload' && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-xs font-medium text-indigo-400">
+                          <Palette className="w-3 h-3" />
+                          {selectedImage.source}
+                        </span>
+                      )}
+                      {/* Style */}
+                      {selectedImage.style && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 border border-purple-500/20 rounded-lg text-xs font-medium text-purple-400">
+                          <Layers className="w-3 h-3" />
+                          {selectedImage.style}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Style Reference (LoRA/Style Code) - Mobile */}
+                {selectedImage.style_ref && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                        <Sparkles className="w-3 h-3" /> Style Reference
+                      </label>
+                      <button
+                        onClick={handleCopyStyleRef}
+                        className="p-1.5 text-gray-500 hover:text-white hover:bg-white/10 rounded transition-colors"
+                        title="Copy"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="w-full bg-black/40 border border-white/5 rounded-lg px-3 py-2.5 text-sm text-gray-300 font-mono">
+                      {selectedImage.style_ref}
+                    </div>
+                  </div>
+                )}
+
             {/* Prompt */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
@@ -297,20 +398,6 @@ export function ImageModal({
                 {selectedImage.prompt}
               </p>
             </div>
-
-            {/* Style */}
-            {selectedImage.style && (
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                  <Layers className="w-3 h-3" /> Style
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  <span className="px-3 py-1 bg-white/5 rounded-full text-xs border border-white/5 text-gray-300">
-                    {selectedImage.style}
-                  </span>
-                </div>
-              </div>
-            )}
 
             <button
               onClick={onDelete}
@@ -463,14 +550,55 @@ export function ImageModal({
 
               {/* Metadata Fields */}
               <div className="space-y-5 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                {/* STYLE */}
-                {selectedImage.style && (
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                      <Layers className="w-3 h-3" /> Style
+                {/* Classification Tags */}
+                {(selectedImage.model_base || selectedImage.source || selectedImage.style) && (
+                  <div className="space-y-3">
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      Classification
                     </label>
-                    <div className="w-full bg-black/40 border border-white/5 rounded-lg px-3 py-2.5 text-sm text-gray-300">
-                      {selectedImage.style}
+                    <div className="flex flex-wrap gap-2">
+                      {/* Model Base */}
+                      {selectedImage.model_base && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-xs font-medium text-cyan-400">
+                          <Box className="w-3 h-3" />
+                          {selectedImage.model_base}
+                        </span>
+                      )}
+                      {/* Source (2D/3D/Real) */}
+                      {selectedImage.source && selectedImage.source !== 'upload' && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-xs font-medium text-indigo-400">
+                          <Palette className="w-3 h-3" />
+                          {selectedImage.source}
+                        </span>
+                      )}
+                      {/* Style */}
+                      {selectedImage.style && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 border border-purple-500/20 rounded-lg text-xs font-medium text-purple-400">
+                          <Layers className="w-3 h-3" />
+                          {selectedImage.style}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Style Reference (LoRA/Style Code) */}
+                {selectedImage.style_ref && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                        <Sparkles className="w-3 h-3" /> Style Reference
+                      </label>
+                      <button
+                        onClick={handleCopyStyleRef}
+                        className="p-1.5 text-gray-500 hover:text-white hover:bg-white/10 rounded transition-colors"
+                        title="Copy"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="w-full bg-black/40 border border-white/5 rounded-lg px-3 py-2.5 text-sm text-gray-300 font-mono">
+                      {selectedImage.style_ref}
                     </div>
                   </div>
                 )}

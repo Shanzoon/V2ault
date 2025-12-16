@@ -4,6 +4,14 @@ import { useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import type { Image, GridSize, DeleteConfirmation } from '../types';
 
+// 缩略图尺寸循环顺序
+const GRID_SIZE_CYCLE: GridSize[] = ['small', 'medium', 'large'];
+const GRID_SIZE_NAMES = {
+  small: '小',
+  medium: '中',
+  large: '大',
+};
+
 interface UseKeyboardShortcutsOptions {
   selectedImage: Image | null;
   isFullscreen: boolean;
@@ -12,6 +20,7 @@ interface UseKeyboardShortcutsOptions {
   isSelectionMode: boolean;
   selectedImageIds: Set<number>;
   images: Image[];
+  gridSize: GridSize;
   setGridSize: (size: GridSize) => void;
   setIsFullscreen: (value: boolean) => void;
   setSelectedImage: (img: Image | null) => void;
@@ -33,6 +42,7 @@ export function useKeyboardShortcuts({
   isSelectionMode,
   selectedImageIds,
   images,
+  gridSize,
   setGridSize,
   setIsFullscreen,
   setSelectedImage,
@@ -47,7 +57,7 @@ export function useKeyboardShortcuts({
 }: UseKeyboardShortcutsOptions) {
   // 防抖：防止快速切换视角
   const lastGridChangeRef = useRef<number>(0);
-  const GRID_CHANGE_DEBOUNCE = 300; // ms
+  const GRID_CHANGE_DEBOUNCE = 200; // ms
 
   const handleNextImage = useCallback(() => {
     if (!selectedImage) return;
@@ -67,33 +77,26 @@ export function useKeyboardShortcuts({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Global Grid Size Shortcuts (Q/W/E) - Only work when not editing text
+      // Global Grid Size Shortcuts (Q - cycle) - Only work when not editing text
       if (!isEditingPrompt && !selectedImage && !deleteConfirmation.show) {
         const now = Date.now();
+
+        // Q: 循环切换布局 small -> medium -> large -> small
         if (e.key.toLowerCase() === 'q') {
           if (now - lastGridChangeRef.current < GRID_CHANGE_DEBOUNCE) return;
           lastGridChangeRef.current = now;
-          setGridSize('small');
-          toast('Small Grid View');
+          const currentIndex = GRID_SIZE_CYCLE.indexOf(gridSize);
+          const nextIndex = (currentIndex + 1) % GRID_SIZE_CYCLE.length;
+          const nextSize = GRID_SIZE_CYCLE[nextIndex];
+          setGridSize(nextSize);
+          toast(`布局: ${GRID_SIZE_NAMES[nextSize]}`);
           return;
         }
-        if (e.key.toLowerCase() === 'w') {
-          if (now - lastGridChangeRef.current < GRID_CHANGE_DEBOUNCE) return;
-          lastGridChangeRef.current = now;
-          setGridSize('medium');
-          toast('Medium Grid View');
-          return;
-        }
-        if (e.key.toLowerCase() === 'e') {
-          if (now - lastGridChangeRef.current < GRID_CHANGE_DEBOUNCE) return;
-          lastGridChangeRef.current = now;
-          setGridSize('large');
-          toast('Large Grid View');
-          return;
-        }
+
+        // R: 随机排列
         if (e.key.toLowerCase() === 'r') {
           onTitleClick();
-          toast('Shuffled');
+          toast('已随机排列');
           return;
         }
       }
@@ -155,6 +158,7 @@ export function useKeyboardShortcuts({
     deleteConfirmation.show,
     isSelectionMode,
     selectedImageIds,
+    gridSize,
     setGridSize,
     setIsFullscreen,
     setSelectedImage,

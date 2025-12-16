@@ -24,6 +24,9 @@ interface UploadMetadata {
   title?: string;
   prompt?: string;
   style?: string;
+  source?: string;
+  model_base?: string;
+  imported_at?: string;  // 风格参照/LoRA名称
   modelBaseId?: number;
 }
 
@@ -196,9 +199,9 @@ export async function POST(request: NextRequest) {
           const stmt = db.prepare(`
             INSERT INTO images (
               filename, filepath, prompt, width, height,
-              filesize, imported_at, source, model_base_id,
-              style, blurhash, dominant_color, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              filesize, imported_at, source, model_base_id, model_base,
+              style, style_ref, blurhash, dominant_color, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
 
           const displayName = fileMeta.title || originalFilename;
@@ -213,9 +216,11 @@ export async function POST(request: NextRequest) {
             height,
             processedImage.length,
             now,
-            'upload',
+            fileMeta.source || 'upload',
             fileMeta.modelBaseId || null,
+            fileMeta.model_base || null,
             fileMeta.style || null,
+            fileMeta.imported_at || null,  // style_ref
             blurhash,
             dominant_color,
             createdAt

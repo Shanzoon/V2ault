@@ -14,6 +14,9 @@ interface ImageGridProps {
   onToggleSelection: (id: number) => void;
   onImageClick: (img: Image) => void;
   onToggleLiked: (id: number) => void;
+  onDownload: (id: number, filename: string) => void;
+  onDelete: (id: number, e: React.MouseEvent) => void;
+  isAdmin: boolean;
   loadMoreRef: (node?: Element | null) => void;
 }
 
@@ -27,6 +30,9 @@ export function ImageGrid({
   onToggleSelection,
   onImageClick,
   onToggleLiked,
+  onDownload,
+  onDelete,
+  isAdmin,
   loadMoreRef,
 }: ImageGridProps) {
   const getGridClasses = () => {
@@ -51,10 +57,8 @@ export function ImageGrid({
           {Array.from({ length: 18 }).map((_, i) => (
             <div
               key={i}
-              className="relative bg-white/5 overflow-hidden animate-pulse col-span-1 row-span-1 aspect-square rounded-xl"
-            >
-              <div className="absolute inset-0 bg-white/5" />
-            </div>
+              className="relative border border-orange-300/40 overflow-hidden animate-pulse col-span-1 row-span-1 aspect-square rounded-xl"
+            />
           ))}
         </div>
       ) : (
@@ -71,6 +75,9 @@ export function ImageGrid({
                 onToggleSelection={onToggleSelection}
                 onImageClick={onImageClick}
                 onToggleLiked={onToggleLiked}
+                onDownload={onDownload}
+                onDelete={onDelete}
+                isAdmin={isAdmin}
                 loadHighRes={gridSize === 'large'}
               />
             ))}

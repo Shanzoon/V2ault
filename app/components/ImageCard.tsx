@@ -2,7 +2,7 @@
 
 import { memo, useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { CheckSquare, Heart } from 'lucide-react';
+import { CheckSquare, Heart, Download, Trash2 } from 'lucide-react';
 import { decode } from 'blurhash';
 import type { ImageCardProps } from '../types';
 
@@ -36,8 +36,27 @@ export const ImageCard = memo(function ImageCard({
   onToggleSelection,
   onImageClick,
   onToggleLiked,
+  onDownload,
+  onDelete,
+  isAdmin,
   loadHighRes,
 }: ImageCardProps) {
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭菜单
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    if (showMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showMenu]);
+
   const ratio = (img.width && img.height) ? (img.width / img.height) : 1;
   let spanClass = 'col-span-1 row-span-1';
   let aspectClass = 'aspect-square';
@@ -91,6 +110,71 @@ export const ImageCard = memo(function ImageCard({
           }`}
         >
           {isSelected && <CheckSquare className="w-3.5 h-3.5" />}
+        </div>
+      )}
+
+      {/* More Options Menu */}
+      {!isSelectionMode && (
+        <div ref={menuRef} className="absolute top-3 right-3 z-20">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(!showMenu);
+            }}
+            className="p-2 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-all duration-300"
+          >
+            <div className="flex flex-col gap-[5px] drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
+              <div className="w-[5px] h-[5px] bg-white rounded-full" />
+              <div className="w-[5px] h-[5px] bg-white rounded-full" />
+              <div className="w-[5px] h-[5px] bg-white rounded-full" />
+            </div>
+          </button>
+
+          {/* Dropdown Menu */}
+          {showMenu && (
+            <div className="absolute top-full right-0 mt-1 py-1 min-w-[120px] bg-black/60 backdrop-blur-xl border border-white/10 rounded-xl shadow-lg overflow-hidden">
+              {/* Like */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleLiked?.(img.id);
+                  setShowMenu(false);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-white/10 transition-colors"
+              >
+                <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
+                {isLiked ? '取消喜欢' : '喜欢'}
+              </button>
+
+              {/* Download */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDownload?.(img.id, img.filename);
+                  setShowMenu(false);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-gray-200 hover:bg-white/10 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                下载
+              </button>
+
+              {/* Delete (Admin Only) */}
+              {isAdmin && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete?.(img.id, e);
+                    setShowMenu(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  删除
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -179,6 +263,7 @@ export const ImageCard = memo(function ImageCard({
     prev.img.like_count === next.img.like_count &&
     prev.isSelectionMode === next.isSelectionMode &&
     prev.isSelected === next.isSelected &&
+    prev.isAdmin === next.isAdmin &&
     prev.loadHighRes === next.loadHighRes
   );
 });
