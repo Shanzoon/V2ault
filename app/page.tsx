@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-
+import { toast } from 'sonner';
 
 import type { Image, GridSize, DeleteConfirmation } from './types';
 import { useImages, useSelection, useKeyboardShortcuts, useUploadQueue, useAuth, useStyles } from './hooks';
@@ -50,6 +50,8 @@ export default function Home() {
     updateImage,
     removeImage,
     removeImages,
+    restoreImage,
+    restoreImages,
     toggleLiked,
     refetch,
   } = useImages();
@@ -92,6 +94,9 @@ export default function Home() {
 
   // 单图删除的临时存储
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+
+  // 延迟删除的 timeout ref（用于撤销）
+  const deleteTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
 
   // Upload Modal State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -206,64 +211,146 @@ export default function Home() {
 
   const executeDelete = useCallback(async () => {
     if (deleteConfirmation.type === 'batch') {
-      try {
-        setIsDeleting(true);
-        const res = await fetch('/api/images/batch', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids: Array.from(selectedImageIds) }),
-        });
+      // 批量删除 - 支持撤销
+      const idsToDelete = Array.from(selectedImageIds);
+      const imagesToDelete = images.filter(img => selectedImageIds.has(img.id));
 
-        if (!res.ok) throw new Error('Failed to delete');
-        removeImages(selectedImageIds);
-        clearSelection();
-      } catch (error) {
-        console.error('Error deleting images:', error);
-        alert('Failed to delete images');
-      } finally {
-        setIsDeleting(false);
+      if (imagesToDelete.length === 0) {
         setDeleteConfirmation({ show: false, type: null });
+        return;
       }
+
+      // 先从 UI 移除（乐观更新）
+      removeImages(selectedImageIds);
+      clearSelection();
+      setDeleteConfirmation({ show: false, type: null });
+
+      const deleteKey = `batch-${Date.now()}`;
+
+      // 显示带撤销按钮的 toast
+      toast(`已删除 ${imagesToDelete.length} 张图片`, {
+        action: {
+          label: '撤销',
+          onClick: () => {
+            // 清除延迟删除的 timeout
+            if (deleteTimeoutRef.current[deleteKey]) {
+              clearTimeout(deleteTimeoutRef.current[deleteKey]);
+              delete deleteTimeoutRef.current[deleteKey];
+            }
+            // 恢复图片
+            restoreImages(imagesToDelete);
+            toast.success(`已恢复 ${imagesToDelete.length} 张图片`);
+          },
+        },
+        duration: 3000,
+        onDismiss: () => {
+          // toast 消失时检查是否已被撤销
+          if (!deleteTimeoutRef.current[deleteKey]) return;
+
+          // 真正执行 API 删除
+          fetch('/api/images/batch', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: idsToDelete }),
+          }).catch(error => {
+            console.error('Error deleting images:', error);
+            // 删除失败，恢复图片
+            restoreImages(imagesToDelete);
+            toast.error('删除失败，已恢复图片');
+          });
+
+          delete deleteTimeoutRef.current[deleteKey];
+        },
+      });
+
+      // 设置一个 marker，表示删除操作未被撤销
+      deleteTimeoutRef.current[deleteKey] = setTimeout(() => {}, 0);
+
     } else if (deleteConfirmation.type === 'single') {
-      // 优先使用 pendingDeleteId（从卡片菜单删除），否则使用 selectedImage（从 Modal 删除）
+      // 单图删除 - 支持撤销
       const targetId = pendingDeleteId || selectedImage?.id;
       if (!targetId) return;
 
-      // 先计算下一张图片，再删除
+      const imageToDelete = images.find(img => img.id === targetId);
+      if (!imageToDelete) {
+        setDeleteConfirmation({ show: false, type: null });
+        setPendingDeleteId(null);
+        return;
+      }
+
+      // 计算下一张图片（用于 Modal 导航）
       let nextImage: Image | null = null;
+      let neighborId: number | undefined;
       if (selectedImage && selectedImage.id === targetId) {
         const currentIndex = images.findIndex(img => img.id === targetId);
         if (images.length > 1) {
           if (currentIndex < images.length - 1) {
             nextImage = images[currentIndex + 1];
+            neighborId = nextImage.id;
           } else if (currentIndex > 0) {
             nextImage = images[currentIndex - 1];
+            neighborId = nextImage.id;
           }
         }
-      }
-
-      try {
-        setIsDeleting(true);
-        const res = await fetch(`/api/images/${targetId}`, {
-          method: 'DELETE',
-        });
-        if (!res.ok) throw new Error('Failed to delete');
-
-        // 先设置下一张图片，再从数组中移除
-        if (selectedImage && selectedImage.id === targetId) {
-          setSelectedImage(nextImage);
+      } else {
+        // 从卡片删除时，找相邻图片
+        const currentIndex = images.findIndex(img => img.id === targetId);
+        if (currentIndex < images.length - 1) {
+          neighborId = images[currentIndex + 1].id;
+        } else if (currentIndex > 0) {
+          neighborId = images[currentIndex - 1].id;
         }
-        removeImage(targetId);
-      } catch (error) {
-        console.error('Error deleting image:', error);
-        alert('Failed to delete image');
-      } finally {
-        setIsDeleting(false);
-        setDeleteConfirmation({ show: false, type: null });
-        setPendingDeleteId(null);
       }
+
+      // 先从 UI 移除（乐观更新）
+      if (selectedImage && selectedImage.id === targetId) {
+        setSelectedImage(nextImage);
+      }
+      removeImage(targetId);
+      setDeleteConfirmation({ show: false, type: null });
+      setPendingDeleteId(null);
+
+      const deleteKey = `single-${targetId}`;
+
+      // 显示带撤销按钮的 toast
+      toast('已删除图片', {
+        description: imageToDelete.filename,
+        action: {
+          label: '撤销',
+          onClick: () => {
+            // 清除延迟删除的 timeout
+            if (deleteTimeoutRef.current[deleteKey]) {
+              clearTimeout(deleteTimeoutRef.current[deleteKey]);
+              delete deleteTimeoutRef.current[deleteKey];
+            }
+            // 恢复图片到原位置附近
+            restoreImage(imageToDelete, neighborId);
+            toast.success('已恢复图片');
+          },
+        },
+        duration: 3000,
+        onDismiss: () => {
+          // toast 消失时检查是否已被撤销
+          if (!deleteTimeoutRef.current[deleteKey]) return;
+
+          // 真正执行 API 删除
+          fetch(`/api/images/${targetId}`, {
+            method: 'DELETE',
+          }).catch(error => {
+            console.error('Error deleting image:', error);
+            // 删除失败，恢复图片
+            restoreImage(imageToDelete, neighborId);
+            toast.error('删除失败，已恢复图片');
+          });
+
+          delete deleteTimeoutRef.current[deleteKey];
+        },
+      });
+
+      // 设置一个 marker，表示删除操作未被撤销
+      deleteTimeoutRef.current[deleteKey] = setTimeout(() => {}, 0);
     }
-  }, [deleteConfirmation.type, selectedImageIds, selectedImage, pendingDeleteId, images, removeImages, removeImage, clearSelection]);
+  }, [deleteConfirmation.type, selectedImageIds, selectedImage, pendingDeleteId, images, removeImages, removeImage, restoreImage, restoreImages, clearSelection]);
 
   // Keyboard Shortcuts
   useKeyboardShortcuts({

@@ -198,6 +198,27 @@ export function useImages(options: UseImagesOptions = {}) {
     setImages(prev => prev.filter(img => !ids.has(img.id)));
   }, []);
 
+  // 恢复单张图片（用于撤销删除）- 插入到原位置附近
+  const restoreImage = useCallback((image: Image, nearId?: number) => {
+    setImages(prev => {
+      if (nearId) {
+        const nearIndex = prev.findIndex(img => img.id === nearId);
+        if (nearIndex !== -1) {
+          const newImages = [...prev];
+          newImages.splice(nearIndex, 0, image);
+          return newImages;
+        }
+      }
+      // 默认插入到开头
+      return [image, ...prev];
+    });
+  }, []);
+
+  // 批量恢复图片（用于撤销删除）
+  const restoreImages = useCallback((imagesToRestore: Image[]) => {
+    setImages(prev => [...imagesToRestore, ...prev]);
+  }, []);
+
   const toggleLiked = useCallback(async (id: number) => {
     // Optimistic update
     setImages(prev => prev.map(img => {
@@ -280,6 +301,8 @@ export function useImages(options: UseImagesOptions = {}) {
     updateImage,
     removeImage,
     removeImages,
+    restoreImage,
+    restoreImages,
     toggleLiked,
     refetch,
   };
