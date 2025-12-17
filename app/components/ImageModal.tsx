@@ -3,12 +3,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { toast } from 'sonner';
-import { X, Download, Edit2, Save, Trash2, Copy, Layers, Heart, Box, Palette, Sparkles } from 'lucide-react';
+import { X, Download, Edit2, Save, Trash2, Copy, Layers, Heart, Box, Palette, Sparkles, Pencil } from 'lucide-react';
 import { TransformWrapper, TransformComponent, ReactZoomPanPinchRef } from 'react-zoom-pan-pinch';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import type { Swiper as SwiperType } from 'swiper';
 import 'swiper/css';
 import type { Image } from '../types';
+import { MODEL_BASES, STYLE_SOURCES } from '../lib/constants';
 
 interface ImageModalProps {
   selectedImage: Image | null;
@@ -35,8 +36,14 @@ export function ImageModal({
   isAdmin = false,
   isDeleting = false,
 }: ImageModalProps) {
-  const [isEditingPrompt, setIsEditingPrompt] = useState(false);
-  const [editPromptValue, setEditPromptValue] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValues, setEditValues] = useState({
+    model_base: '',
+    source: '',
+    style: '',
+    style_ref: '',
+    prompt: '',
+  });
   const [isSaving, setIsSaving] = useState(false);
   const [isMobileDetailOpen, setIsMobileDetailOpen] = useState(false);
   const [slideDirection, setSlideDirection] = useState(0);
@@ -49,11 +56,16 @@ export function ImageModal({
 
   // Reset edit state when image selection changes
   useEffect(() => {
-    setIsEditingPrompt(false);
-    setEditPromptValue('');
+    setIsEditing(false);
     setIsZoomed(false);
     if (selectedImage) {
-      setEditPromptValue(selectedImage.prompt || '');
+      setEditValues({
+        model_base: selectedImage.model_base || '',
+        source: selectedImage.source || '',
+        style: selectedImage.style || '',
+        style_ref: selectedImage.style_ref || '',
+        prompt: selectedImage.prompt || '',
+      });
     }
   }, [selectedImage]);
 
@@ -110,23 +122,39 @@ export function ImageModal({
 
   if (!selectedImage) return null;
 
-  const handleSavePrompt = async () => {
+  const handleSaveEdit = async () => {
     if (!selectedImage) return;
     try {
       setIsSaving(true);
       const res = await fetch(`/api/images/${selectedImage.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: editPromptValue }),
+        body: JSON.stringify(editValues),
       });
       if (!res.ok) throw new Error('Failed to update');
-      const data = await res.json();
-      const updatedImage = { ...selectedImage, prompt: data.prompt };
+      const updatedImage: Image = {
+        ...selectedImage,
+        // 空字符串转为null
+        model_base: editValues.model_base || null,
+        source: editValues.source || null,
+        style: editValues.style || null,
+        style_ref: editValues.style_ref || null,
+        prompt: editValues.prompt || null,
+      };
       onUpdateImage(updatedImage);
-      setIsEditingPrompt(false);
+      // 同步更新本地编辑值
+      setEditValues({
+        model_base: updatedImage.model_base || '',
+        source: updatedImage.source || '',
+        style: updatedImage.style || '',
+        style_ref: updatedImage.style_ref || '',
+        prompt: updatedImage.prompt || '',
+      });
+      setIsEditing(false);
+      toast.success('Image updated successfully');
     } catch (error) {
-      console.error('Error updating prompt:', error);
-      alert('Failed to update prompt');
+      console.error('Error updating image:', error);
+      toast.error('Failed to update image');
     } finally {
       setIsSaving(false);
     }
@@ -317,6 +345,23 @@ export function ImageModal({
                   }`}
                 />
               </button>
+              {/* Edit Button - Admin Only */}
+              {isAdmin && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsEditing(!isEditing);
+                    setIsMobileDetailOpen(true);
+                  }}
+                  className={`p-2 rounded-full transition-colors ${
+                    isEditing
+                      ? 'bg-cyan-500/20 text-cyan-400'
+                      : 'bg-white/10 text-white hover:bg-white/20'
+                  }`}
+                >
+                  <Pencil className="w-5 h-5" />
+                </button>
+              )}
               {/* Download Button */}
               <a
                 href={`/api/image/${selectedImage.id}`}
@@ -336,6 +381,104 @@ export function ImageModal({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="space-y-6 pt-2">
+            {isEditing ? (
+              /* Edit Mode - Mobile */
+              <>
+                {/* Model Base Select */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                    <Box className="w-3 h-3" /> Model Base
+                  </label>
+                  <select
+                    value={editValues.model_base}
+                    onChange={(e) => setEditValues({ ...editValues, model_base: e.target.value })}
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none"
+                  >
+                    <option value="">Select Model</option>
+                    {MODEL_BASES.map((model) => (
+                      <option key={model} value={model}>{model}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Source Select */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                    <Palette className="w-3 h-3" /> Style Category
+                  </label>
+                  <select
+                    value={editValues.source}
+                    onChange={(e) => setEditValues({ ...editValues, source: e.target.value })}
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none"
+                  >
+                    <option value="">Select Category</option>
+                    {STYLE_SOURCES.map((source) => (
+                      <option key={source} value={source}>{source}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Style Input */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                    <Layers className="w-3 h-3" /> Style
+                  </label>
+                  <input
+                    type="text"
+                    value={editValues.style}
+                    onChange={(e) => setEditValues({ ...editValues, style: e.target.value })}
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none"
+                    placeholder="e.g., Cyberpunk, Anime..."
+                  />
+                </div>
+
+                {/* Style Reference Input */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> Style Reference
+                  </label>
+                  <input
+                    type="text"
+                    value={editValues.style_ref}
+                    onChange={(e) => setEditValues({ ...editValues, style_ref: e.target.value })}
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none"
+                    placeholder="LoRA name or style code..."
+                  />
+                </div>
+
+                {/* Prompt Textarea */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                    <Edit2 className="w-3 h-3" /> Prompt
+                  </label>
+                  <textarea
+                    value={editValues.prompt}
+                    onChange={(e) => setEditValues({ ...editValues, prompt: e.target.value })}
+                    className="w-full min-h-[120px] bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none resize-none"
+                    placeholder="Image prompt..."
+                  />
+                </div>
+
+                {/* Save/Cancel Buttons */}
+                <div className="flex gap-2 pt-2">
+                  <button
+                    onClick={() => setIsEditing(false)}
+                    className="flex-1 py-3 rounded-lg text-sm font-medium text-gray-400 bg-white/5 border border-white/10"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveEdit}
+                    disabled={isSaving}
+                    className="flex-1 py-3 rounded-lg text-sm font-bold text-white bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isSaving ? 'Saving...' : <><Save className="w-4 h-4" /> Save</>}
+                  </button>
+                </div>
+              </>
+            ) : (
+              /* View Mode - Mobile */
+              <>
                 {/* Classification Tags */}
                 {(selectedImage.model_base || selectedImage.source || selectedImage.style) && (
                   <div className="space-y-3">
@@ -389,27 +532,38 @@ export function ImageModal({
                   </div>
                 )}
 
-            {/* Prompt */}
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                <Edit2 className="w-3 h-3" /> Prompt
-              </label>
-              <p className="text-sm text-gray-300 leading-relaxed bg-black/20 p-3 rounded-lg border border-white/5">
-                {selectedImage.prompt}
-              </p>
-            </div>
+                {/* Prompt */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                      <Edit2 className="w-3 h-3" /> Prompt
+                    </label>
+                    <button
+                      onClick={handleCopyPrompt}
+                      className="p-1.5 text-gray-500 hover:text-white hover:bg-white/10 rounded transition-colors"
+                      title="Copy"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <p className="text-sm text-gray-300 leading-relaxed bg-black/20 p-3 rounded-lg border border-white/5">
+                    {selectedImage.prompt}
+                  </p>
+                </div>
 
-            <button
-              onClick={onDelete}
-              disabled={!isAdmin}
-              className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold border mt-8 ${
-                isAdmin
-                  ? 'bg-red-500/10 text-red-400 border-red-500/20'
-                  : 'bg-gray-700/50 text-gray-500 border-gray-600/20 cursor-not-allowed'
-              }`}
-            >
-              <Trash2 className="w-4 h-4" /> Delete Asset
-            </button>
+                <button
+                  onClick={onDelete}
+                  disabled={!isAdmin}
+                  className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold border mt-8 ${
+                    isAdmin
+                      ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                      : 'bg-gray-700/50 text-gray-500 border-gray-600/20 cursor-not-allowed'
+                  }`}
+                >
+                  <Trash2 className="w-4 h-4" /> Delete Asset
+                </button>
+              </>
+            )}
           </div>
         </div>
       </motion.div>
@@ -550,124 +704,162 @@ export function ImageModal({
 
               {/* Metadata Fields */}
               <div className="space-y-5 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                {/* Classification Tags */}
-                {(selectedImage.model_base || selectedImage.source || selectedImage.style) && (
-                  <div className="space-y-3">
-                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
-                      Classification
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {/* Model Base */}
-                      {selectedImage.model_base && (
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-xs font-medium text-cyan-400">
-                          <Box className="w-3 h-3" />
-                          {selectedImage.model_base}
-                        </span>
-                      )}
-                      {/* Source (2D/3D/Real) */}
-                      {selectedImage.source && selectedImage.source !== 'upload' && (
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-xs font-medium text-indigo-400">
-                          <Palette className="w-3 h-3" />
-                          {selectedImage.source}
-                        </span>
-                      )}
-                      {/* Style */}
-                      {selectedImage.style && (
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 border border-purple-500/20 rounded-lg text-xs font-medium text-purple-400">
-                          <Layers className="w-3 h-3" />
-                          {selectedImage.style}
-                        </span>
-                      )}
+                {isEditing ? (
+                  /* Edit Mode - Desktop */
+                  <>
+                    {/* Model Base Select */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                        <Box className="w-3 h-3" /> Model Base
+                      </label>
+                      <select
+                        value={editValues.model_base}
+                        onChange={(e) => setEditValues({ ...editValues, model_base: e.target.value })}
+                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none"
+                      >
+                        <option value="">Select Model</option>
+                        {MODEL_BASES.map((model) => (
+                          <option key={model} value={model}>{model}</option>
+                        ))}
+                      </select>
                     </div>
-                  </div>
-                )}
 
-                {/* Style Reference (LoRA/Style Code) */}
-                {selectedImage.style_ref && (
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
+                    {/* Source Select */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                        <Palette className="w-3 h-3" /> Style Category
+                      </label>
+                      <select
+                        value={editValues.source}
+                        onChange={(e) => setEditValues({ ...editValues, source: e.target.value })}
+                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none"
+                      >
+                        <option value="">Select Category</option>
+                        {STYLE_SOURCES.map((source) => (
+                          <option key={source} value={source}>{source}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Style Input */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                        <Layers className="w-3 h-3" /> Style
+                      </label>
+                      <input
+                        type="text"
+                        value={editValues.style}
+                        onChange={(e) => setEditValues({ ...editValues, style: e.target.value })}
+                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none"
+                        placeholder="e.g., Cyberpunk, Anime..."
+                      />
+                    </div>
+
+                    {/* Style Reference Input */}
+                    <div className="space-y-2">
                       <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
                         <Sparkles className="w-3 h-3" /> Style Reference
                       </label>
-                      <button
-                        onClick={handleCopyStyleRef}
-                        className="p-1.5 text-gray-500 hover:text-white hover:bg-white/10 rounded transition-colors"
-                        title="Copy"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <div className="w-full bg-black/40 border border-white/5 rounded-lg px-3 py-2.5 text-sm text-gray-300 font-mono">
-                      {selectedImage.style_ref}
-                    </div>
-                  </div>
-                )}
-
-                {/* PROMPT */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                      <Edit2 className="w-3 h-3" /> Prompt
-                    </label>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={handleCopyPrompt}
-                        className="p-1.5 text-gray-500 hover:text-white hover:bg-white/10 rounded transition-colors"
-                        title="Copy"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setIsEditingPrompt(!isEditingPrompt)}
-                        className={`p-1.5 rounded transition-colors ${
-                          isEditingPrompt
-                            ? 'text-cyan-400 bg-cyan-400/10'
-                            : 'text-gray-500 hover:text-white hover:bg-white/10'
-                        }`}
-                        title="Edit"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {isEditingPrompt ? (
-                    <div className="space-y-2">
-                      <textarea
-                        value={editPromptValue}
-                        onChange={(e) => setEditPromptValue(e.target.value)}
-                        className="w-full min-h-[160px] bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none resize-none custom-scrollbar"
+                      <input
+                        type="text"
+                        value={editValues.style_ref}
+                        onChange={(e) => setEditValues({ ...editValues, style_ref: e.target.value })}
+                        className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none"
+                        placeholder="LoRA name or style code..."
                       />
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => setIsEditingPrompt(false)}
-                          className="px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-300"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleSavePrompt}
-                          disabled={isSaving}
-                          className="px-3 py-1.5 bg-cyan-600 text-white text-xs font-bold rounded hover:bg-cyan-500 disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-cyan-900/20"
-                        >
-                          {isSaving ? (
-                            'Saving...'
-                          ) : (
-                            <>
-                              <Save className="w-3 h-3" /> Save
-                            </>
+                    </div>
+
+                    {/* Prompt Textarea */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                        <Edit2 className="w-3 h-3" /> Prompt
+                      </label>
+                      <textarea
+                        value={editValues.prompt}
+                        onChange={(e) => setEditValues({ ...editValues, prompt: e.target.value })}
+                        className="w-full min-h-[160px] bg-black/40 border border-white/10 rounded-lg p-3 text-sm text-gray-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none resize-none custom-scrollbar"
+                        placeholder="Image prompt..."
+                      />
+                    </div>
+                  </>
+                ) : (
+                  /* View Mode - Desktop */
+                  <>
+                    {/* Classification Tags */}
+                    {(selectedImage.model_base || selectedImage.source || selectedImage.style) && (
+                      <div className="space-y-3">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                          Classification
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {/* Model Base */}
+                          {selectedImage.model_base && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/10 border border-cyan-500/20 rounded-lg text-xs font-medium text-cyan-400">
+                              <Box className="w-3 h-3" />
+                              {selectedImage.model_base}
+                            </span>
                           )}
+                          {/* Source (2D/3D/Real) */}
+                          {selectedImage.source && selectedImage.source !== 'upload' && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-xs font-medium text-indigo-400">
+                              <Palette className="w-3 h-3" />
+                              {selectedImage.source}
+                            </span>
+                          )}
+                          {/* Style */}
+                          {selectedImage.style && (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-500/10 border border-purple-500/20 rounded-lg text-xs font-medium text-purple-400">
+                              <Layers className="w-3 h-3" />
+                              {selectedImage.style}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Style Reference (LoRA/Style Code) */}
+                    {selectedImage.style_ref && (
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                            <Sparkles className="w-3 h-3" /> Style Reference
+                          </label>
+                          <button
+                            onClick={handleCopyStyleRef}
+                            className="p-1.5 text-gray-500 hover:text-white hover:bg-white/10 rounded transition-colors"
+                            title="Copy"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="w-full bg-black/40 border border-white/5 rounded-lg px-3 py-2.5 text-sm text-gray-300 font-mono">
+                          {selectedImage.style_ref}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* PROMPT */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                          <Edit2 className="w-3 h-3" /> Prompt
+                        </label>
+                        <button
+                          onClick={handleCopyPrompt}
+                          className="p-1.5 text-gray-500 hover:text-white hover:bg-white/10 rounded transition-colors"
+                          title="Copy"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
                         </button>
                       </div>
+                      <div className="w-full min-h-[120px] max-h-[200px] bg-black/20 border border-transparent hover:border-white/5 rounded-lg p-3 overflow-y-auto custom-scrollbar group transition-colors cursor-default">
+                        <p className="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap group-hover:text-gray-300 transition-colors">
+                          {selectedImage.prompt}
+                        </p>
+                      </div>
                     </div>
-                  ) : (
-                    <div className="w-full min-h-[120px] max-h-[200px] bg-black/20 border border-transparent hover:border-white/5 rounded-lg p-3 overflow-y-auto custom-scrollbar group transition-colors cursor-default">
-                      <p className="text-sm text-gray-400 leading-relaxed whitespace-pre-wrap group-hover:text-gray-300 transition-colors">
-                        {selectedImage.prompt}
-                      </p>
-                    </div>
-                  )}
-                </div>
+                  </>
+                )}
               </div>
 
               {/* Footer: Actions */}
@@ -692,13 +884,62 @@ export function ImageModal({
                   />
                 </button>
 
+                {/* Edit Button - Admin Only */}
+                {isAdmin && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isEditing) {
+                        handleSaveEdit();
+                      } else {
+                        setIsEditing(true);
+                      }
+                    }}
+                    disabled={isSaving}
+                    className={`p-3 rounded-lg transition-colors border ${
+                      isEditing
+                        ? 'bg-cyan-500/10 border-cyan-500/20 text-cyan-400'
+                        : 'bg-white/5 border-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                    }`}
+                    title={isEditing ? 'Save' : 'Edit'}
+                  >
+                    {isEditing ? (
+                      isSaving ? <span className="w-4 h-4 animate-spin">⏳</span> : <Save className="w-4 h-4" />
+                    ) : (
+                      <Pencil className="w-4 h-4" />
+                    )}
+                  </button>
+                )}
+
+                {/* Cancel Edit Button - Only in Edit Mode */}
+                {isEditing && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsEditing(false);
+                      // Reset values
+                      setEditValues({
+                        model_base: selectedImage.model_base || '',
+                        source: selectedImage.source || '',
+                        style: selectedImage.style || '',
+                        style_ref: selectedImage.style_ref || '',
+                        prompt: selectedImage.prompt || '',
+                      });
+                    }}
+                    className="p-3 rounded-lg transition-colors border bg-white/5 border-white/5 text-gray-400 hover:text-white hover:bg-white/10"
+                    title="Cancel"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+
                 {/* Download Button */}
                 <a
                   href={`/api/image/${selectedImage.id}`}
                   download={selectedImage.filename}
                   className="flex-1 flex items-center justify-center gap-2 bg-white text-black py-3 rounded-lg text-sm font-bold hover:bg-gray-200 transition-colors shadow-[0_0_15px_rgba(255,255,255,0.1)]"
                 >
-                  <Download className="w-4 h-4" /> Download Asset
+                  <Download className="w-4 h-4" /> Download
                 </a>
 
                 {/* Delete Button */}

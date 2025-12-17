@@ -37,6 +37,7 @@ export const MODEL_BASES = [
   'Nano-banana',
   'Qwen-image',
   'Z-image',
+  'GPT-image 1.5',
   'other',
 ] as const;
 

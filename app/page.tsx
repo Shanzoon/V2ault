@@ -108,12 +108,23 @@ export default function Home() {
     }
   }, [debouncedSearch, sortMode, randomSeed]);
 
-  // Sync selectedImage with images array (for like status updates)
+  // Sync selectedImage with images array (for all field updates)
   useEffect(() => {
     if (selectedImage) {
       const updatedImage = images.find(img => img.id === selectedImage.id);
-      if (updatedImage && updatedImage.like_count !== selectedImage.like_count) {
-        setSelectedImage(updatedImage);
+      if (updatedImage && updatedImage !== selectedImage) {
+        // Check if any field has changed
+        const hasChanges =
+          updatedImage.like_count !== selectedImage.like_count ||
+          updatedImage.model_base !== selectedImage.model_base ||
+          updatedImage.source !== selectedImage.source ||
+          updatedImage.style !== selectedImage.style ||
+          updatedImage.style_ref !== selectedImage.style_ref ||
+          updatedImage.prompt !== selectedImage.prompt;
+
+        if (hasChanges) {
+          setSelectedImage(updatedImage);
+        }
       }
     }
   }, [images, selectedImage]);

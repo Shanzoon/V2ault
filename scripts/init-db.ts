@@ -1,6 +1,10 @@
 /**
  * 数据库初始化脚本
- * 创建表结构和索引
+ * 创建表结构、索引，并自动迁移旧数据库
+ *
+ * 功能:
+ *   - 新数据库: 创建完整表结构
+ *   - 旧数据库: 自动添加缺失的列
  *
  * 使用方法:
  *   npx tsx scripts/init-db.ts
@@ -47,6 +51,22 @@ try {
 
   // 创建表
   db.exec(createTableQuery);
+
+  // 迁移旧数据库：检查并添加缺失的列
+  const columns = db.prepare("PRAGMA table_info(images)").all() as { name: string }[];
+  const columnNames = new Set(columns.map(col => col.name));
+
+  const migrations: { name: string; sql: string }[] = [
+    { name: 'model_base', sql: 'ALTER TABLE images ADD COLUMN model_base TEXT' },
+    { name: 'style_ref', sql: 'ALTER TABLE images ADD COLUMN style_ref TEXT' },
+  ];
+
+  for (const migration of migrations) {
+    if (!columnNames.has(migration.name)) {
+      db.exec(migration.sql);
+      console.log(`已添加列: ${migration.name}`);
+    }
+  }
 
   // 创建索引
   db.exec(createIndexCreatedAt);
