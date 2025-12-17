@@ -14,13 +14,15 @@
 ### 搜索与筛选
 - 全文搜索（支持 Prompt、文件名、路径）
 - 分辨率筛选（Medium / High / Ultra）
+- 模型基底筛选（SD系列、Flux.1、Midjourney、GPT-image 1.5 等）
+- 风格分类筛选（2D / 3D / Real）
 - 收藏筛选
 - 排序方式：最新 / 随机
 
 ### 图片管理
 - 上传图片（自动转换为 WebP 无损格式）
 - 单张/批量删除
-- 编辑图片 Prompt
+- 全局编辑图片元数据（模型基底、风格大类、具体风格、风格参考、Prompt）
 - 点赞收藏功能
 - 批量下载（ZIP 打包）
 
@@ -152,7 +154,10 @@ V2ault/
 | width | INTEGER | 宽度 |
 | height | INTEGER | 高度 |
 | filesize | INTEGER | 文件大小 |
-| style | TEXT | 风格标签 |
+| model_base | TEXT | 模型基底（SD系列/Flux.1/Midjourney 等）|
+| source | TEXT | 风格大类（2D/3D/Real）|
+| style | TEXT | 具体风格标签 |
+| style_ref | TEXT | 风格参考/LoRA 名称 |
 | blurhash | TEXT | BlurHash 占位符 |
 | dominant_color | TEXT | 主色调 |
 | like_count | INTEGER | 点赞数 |
