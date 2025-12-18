@@ -8,3 +8,8 @@ export { UploadModal } from './UploadModal';
 export { UploadProgress } from './UploadProgress';
 export { DatabaseErrorBanner } from './DatabaseErrorBanner';
 export { ScrollToTop } from './ScrollToTop';
+export { GlobalDropZone } from './GlobalDropZone';
+export { SelectionBox } from './SelectionBox';
+export { SelectionActionBar } from './SelectionActionBar';
+export { BatchEditMenu } from './BatchEditMenu';
+export { StyleCascadeMenu } from './StyleCascadeMenu';

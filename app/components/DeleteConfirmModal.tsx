@@ -1,7 +1,8 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef, useCallback } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { useClickOutside } from '../hooks';
 import type { DeleteConfirmation } from '../types';
 
 interface DeleteConfirmModalProps {
@@ -19,21 +20,12 @@ export function DeleteConfirmModal({
 }: DeleteConfirmModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
 
-  // Click outside to close modal
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (deleteConfirmation.show && modalRef.current && !modalRef.current.contains(event.target as Node)) {
-        setDeleteConfirmation({ show: false, type: null });
-      }
-    };
-
-    if (deleteConfirmation.show) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [deleteConfirmation.show, setDeleteConfirmation]);
+  // 点击外部关闭模态框
+  const closeModal = useCallback(
+    () => setDeleteConfirmation({ show: false, type: null }),
+    [setDeleteConfirmation]
+  );
+  useClickOutside(modalRef, closeModal, deleteConfirmation.show);
 
   if (!deleteConfirmation.show) return null;
 

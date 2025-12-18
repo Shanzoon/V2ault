@@ -47,3 +47,25 @@ export const STYLE_SOURCES = ['2D', '3D', 'Real'] as const;
 // 类型导出
 export type ModelBase = typeof MODEL_BASES[number];
 export type StyleSource = typeof STYLE_SOURCES[number];
+
+// ============================================
+// 多选功能常量
+// ============================================
+
+// 框选配置
+export const BOX_SELECTION = {
+  /** 边缘自动滚动阈值（像素） */
+  EDGE_THRESHOLD: 50,
+  /** 自动滚动速度（像素/帧） */
+  SCROLL_SPEED: 15,
+  /** 帧间隔（毫秒，约60fps） */
+  FRAME_INTERVAL: 16,
+  /** 点击 vs 拖拽判定距离（像素） */
+  CLICK_THRESHOLD: 5,
+} as const;
+
+// 选中限制
+export const SELECTION_LIMITS = {
+  /** 最大选中图片数量 */
+  MAX_SELECTION: 200,
+} as const;

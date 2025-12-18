@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, X, Grid, LayoutGrid, Maximize, Shuffle, Clock, Download, Trash2, Check, Upload, Lock, LogOut, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, X, Grid, LayoutGrid, Maximize, Shuffle, Clock, Check, Upload, Lock, LogOut, ChevronDown, ChevronUp } from 'lucide-react';
 import type { GridSize, SortMode } from '../types';
 import { MODEL_BASES, STYLE_SOURCES } from '../lib/constants';
 import type { StyleSource } from '../lib/constants';
@@ -48,17 +48,6 @@ interface SidebarProps {
   setSortMode: (mode: SortMode) => void;
   setRandomSeed: (seed: number) => void;
 
-  // Selection
-  isSelectionMode: boolean;
-  setIsSelectionMode: (value: boolean) => void;
-  selectedImageIds: Set<number>;
-
-  // Actions
-  onBulkDownload: () => void;
-  onBatchDelete: () => void;
-  isBulkDownloading: boolean;
-  isDeleting: boolean;
-
   // Mobile
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (value: boolean) => void;
@@ -93,13 +82,6 @@ export function Sidebar({
   sortMode,
   setSortMode,
   setRandomSeed,
-  isSelectionMode,
-  setIsSelectionMode,
-  selectedImageIds,
-  onBulkDownload,
-  onBatchDelete,
-  isBulkDownloading,
-  isDeleting,
   isMobileMenuOpen,
   setIsMobileMenuOpen,
   onTitleClick,
@@ -485,88 +467,25 @@ export function Sidebar({
           </div>
         </div>
 
-        {/* Selection Actions (Footer) */}
-        <div className="p-6 border-t border-white/10 bg-black/20 flex flex-col-reverse gap-4">
-          {/* Toggle Switch - Always at bottom */}
-          <div className="flex items-center justify-between">
-            <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">Selection Mode</h2>
+        {/* Auth Section (Footer) */}
+        <div className="p-6 border-t border-white/10 bg-black/20">
+          {isAdmin ? (
             <button
-              onClick={() => setIsSelectionMode(!isSelectionMode)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-black ${
-                isSelectionMode ? 'bg-orange-500' : 'bg-white/10'
-              }`}
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-white/5"
             >
-              <span
-                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
-                  isSelectionMode ? 'translate-x-5' : 'translate-x-1'
-                }`}
-              />
+              <LogOut className="w-3.5 h-3.5" />
+              退出管理
             </button>
-          </div>
-
-          {/* Action Panel - Appears above the toggle */}
-          <AnimatePresence>
-            {isSelectionMode && (
-              <motion.div
-                initial={{ opacity: 0, height: 0, marginBottom: 0 }}
-                animate={{ opacity: 1, height: 'auto', marginBottom: 0 }}
-                exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-                className="overflow-hidden"
-              >
-                <div className="bg-white/5 rounded-xl p-4 border border-white/10 backdrop-blur-md">
-                  <div className="flex items-center justify-between mb-4 text-xs font-medium text-gray-400">
-                    <span className="uppercase tracking-wider">Selected</span>
-                    <span className="font-mono text-white bg-white/10 px-2 py-0.5 rounded text-[10px]">
-                      {selectedImageIds.size}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={onBulkDownload}
-                      disabled={isBulkDownloading || selectedImageIds.size === 0}
-                      className="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white py-2.5 rounded-lg text-xs font-bold uppercase tracking-wide transition-all disabled:opacity-30 disabled:cursor-not-allowed border border-white/5"
-                    >
-                      {isBulkDownloading ? (
-                        <div className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin"></div>
-                      ) : (
-                        <Download className="w-3.5 h-3.5" />
-                      )}
-                      Download
-                    </button>
-                    <button
-                      onClick={onBatchDelete}
-                      disabled={!isAdmin || isDeleting || selectedImageIds.size === 0}
-                      className="flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wide transition-all disabled:opacity-30 disabled:cursor-not-allowed border border-red-500/20"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Auth Button */}
-          <div className="pt-4 border-t border-white/5">
-            {isAdmin ? (
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-white/5"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                退出管理
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowLoginModal(true)}
-                className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-white/5"
-              >
-                <Lock className="w-3.5 h-3.5" />
-                管理员登录
-              </button>
-            )}
-          </div>
+          ) : (
+            <button
+              onClick={() => setShowLoginModal(true)}
+              className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-white/5"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              管理员登录
+            </button>
+          )}
         </div>
       </aside>
 

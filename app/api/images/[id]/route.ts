@@ -8,6 +8,7 @@ import {
   getErrorMessage,
   clearImageCache,
   deleteSourceFile,
+  UPLOAD_DIR,
 } from '@/app/lib';
 import { isAdmin } from '@/app/lib/auth';
 
@@ -57,14 +58,18 @@ export async function DELETE(
 
       // 定义搜索目录 (对应你建立的软连接)
       const searchDirs = [
-        'public/images',   // H 盘
-        'public/comfy',    // F 盘
-        'public/desktop',  // D 盘
+        UPLOAD_DIR,         // 上传目录
+        'public/images',    // H 盘
+        'public/comfy',     // F 盘
+        'public/desktop',   // D 盘
       ];
 
       // 遍历寻找
       for (const dirName of searchDirs) {
-        const potentialPath = path.join(process.cwd(), dirName, filename || '');
+        // UPLOAD_DIR 是绝对路径，其他是相对路径
+        const potentialPath = path.isAbsolute(dirName)
+          ? path.join(dirName, filename || '')
+          : path.join(process.cwd(), dirName, filename || '');
         if (fs.existsSync(potentialPath)) {
           finalPath = potentialPath;
           break; // 找到了就停止

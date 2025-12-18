@@ -3,6 +3,14 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* 统一的玻璃态背景色方案 */
+  --glass-bg: rgba(0, 0, 0, 0.6);           /* 主要背景（菜单、弹窗） */
+  --glass-bg-light: rgba(0, 0, 0, 0.4);     /* 次要背景（输入框） */
+  --glass-bg-lighter: rgba(0, 0, 0, 0.2);   /* 最浅背景（hover 状态） */
+  --glass-border: rgba(255, 255, 255, 0.1); /* 边框颜色 */
+  --glass-hover: rgba(255, 255, 255, 0.05); /* hover 高亮 */
+  --glass-active: rgba(255, 255, 255, 0.15);/* active 高亮 */
 }
 
 @theme inline {

@@ -190,6 +190,16 @@ export function useImages(options: UseImagesOptions = {}) {
     setImages(prev => prev.map(img => img.id === updatedImage.id ? updatedImage : img));
   }, []);
 
+  // 批量更新图片字段（用于乐观更新）
+  const updateImages = useCallback((ids: Set<number>, updates: Partial<Image>) => {
+    setImages(prev => prev.map(img => {
+      if (ids.has(img.id)) {
+        return { ...img, ...updates };
+      }
+      return img;
+    }));
+  }, []);
+
   const removeImage = useCallback((id: number) => {
     setImages(prev => prev.filter(img => img.id !== id));
   }, []);
@@ -299,6 +309,7 @@ export function useImages(options: UseImagesOptions = {}) {
 
     // Actions
     updateImage,
+    updateImages,
     removeImage,
     removeImages,
     restoreImage,

@@ -1,9 +1,10 @@
 ﻿'use client';
 
-import { memo, useState, useEffect, useRef } from 'react';
+import { memo, useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { CheckSquare, Heart, Download, Trash2 } from 'lucide-react';
 import { decode } from 'blurhash';
+import { useClickOutside } from '../hooks';
 import type { ImageCardProps } from '../types';
 
 const BlurhashCanvas = ({ hash }: { hash: string }) => {
@@ -45,27 +46,15 @@ export const ImageCard = memo(function ImageCard({
   const menuRef = useRef<HTMLDivElement>(null);
 
   // 点击外部关闭菜单
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setShowMenu(false);
-      }
-    };
-    if (showMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showMenu]);
+  const closeMenu = useCallback(() => setShowMenu(false), []);
+  useClickOutside(menuRef, closeMenu, showMenu);
 
   const ratio = (img.width && img.height) ? (img.width / img.height) : 1;
-  let spanClass = 'col-span-1 row-span-1';
   let aspectClass = 'aspect-square';
 
   if (ratio > 1.2) {
-    spanClass = 'col-span-2 row-span-1';
     aspectClass = 'aspect-[2/1]';
   } else if (ratio < 0.8) {
-    spanClass = 'col-span-1 row-span-2';
     aspectClass = 'aspect-[1/2]';
   }
 
@@ -90,8 +79,8 @@ export const ImageCard = memo(function ImageCard({
         opacity: { duration: 0.2 },
         scale: { duration: 0.2 }
       }}
-      className={`relative group bg-gray-900 overflow-hidden ${spanClass} ${
-        isSelected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-black' : ''
+      className={`relative group bg-gray-900 overflow-hidden w-full h-full ${
+        isSelected ? 'ring-[3px] ring-white ring-offset-1 ring-offset-black/50' : ''
       }`}
       onClick={() => {
         if (isSelectionMode) {
@@ -105,7 +94,7 @@ export const ImageCard = memo(function ImageCard({
         <div
           className={`absolute top-3 right-3 z-20 w-5 h-5 rounded border shadow-sm flex items-center justify-center transition-all ${
             isSelected
-              ? 'bg-indigo-600 border-indigo-600 text-white'
+              ? 'bg-orange-500 border-orange-500 text-white'
               : 'bg-black/40 border-white/60 hover:bg-black/60'
           }`}
         >

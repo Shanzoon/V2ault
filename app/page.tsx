@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 
 import type { Image, GridSize, DeleteConfirmation } from './types';
-import { useImages, useSelection, useKeyboardShortcuts, useUploadQueue, useAuth, useStyles } from './hooks';
+import { useImages, useSelection, useKeyboardShortcuts, useUploadQueue, useAuth, useStyles, useBoxSelection, useBatchEdit } from './hooks';
 import {
   ImageModal,
   ImageGrid,
@@ -15,6 +15,9 @@ import {
   UploadProgress,
   DatabaseErrorBanner,
   ScrollToTop,
+  GlobalDropZone,
+  SelectionBox,
+  SelectionActionBar,
 } from './components';
 
 export default function Home() {
@@ -48,6 +51,7 @@ export default function Home() {
     setRandomSeed,
     shuffleImages,
     updateImage,
+    updateImages,
     removeImage,
     removeImages,
     restoreImage,
@@ -61,6 +65,7 @@ export default function Home() {
     isSelectionMode,
     setIsSelectionMode,
     selectedImageIds,
+    setSelectedIds,
     toggleSelection,
     clearSelection,
   } = useSelection();
@@ -77,13 +82,15 @@ export default function Home() {
   // Auth Hook
   const { isAdmin, login, logout } = useAuth();
 
+  // Card Rects State (用于框选碰撞检测)
+  const [cardRects, setCardRects] = useState<Map<number, DOMRect>>(new Map());
+
   // UI State
   const [gridSize, setGridSize] = useState<GridSize>('medium');
   const [selectedImage, setSelectedImage] = useState<Image | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isBulkDownloading, setIsBulkDownloading] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   // Delete Confirmation State
   const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmation>({
@@ -100,11 +107,33 @@ export default function Home() {
 
   // Upload Modal State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
 
   // Refs
   const singleDeleteBtnRef = useRef<HTMLButtonElement>(null);
   const bulkDeleteBtnRef = useRef<HTMLButtonElement>(null);
   const scrollContainerRef = useRef<HTMLElement>(null);
+
+  // Box Selection Hook (框选)
+  const boxSelectionEnabled = !isUploadModalOpen && !selectedImage && !deleteConfirmation.show;
+  const { selectionBox, isSelecting } = useBoxSelection({
+    enabled: boxSelectionEnabled,
+    scrollContainerRef,
+    cardRects,
+    onSelectionChange: setSelectedIds,
+    setIsSelectionMode,
+    isSelectionMode,
+    hasSelection: selectedImageIds.size > 0,
+    clearSelection,
+  });
+
+  // Batch Edit Hook (批量编辑)
+  const { isProcessing: isBatchProcessing, batchLike, batchUpdateModel, batchUpdateStyle } = useBatchEdit({
+    selectedImageIds,
+    images,
+    updateImages,
+    onStyleChange: refetchStyles,
+  });
 
   // Scroll to top effect
   useEffect(() => {
@@ -142,6 +171,22 @@ export default function Home() {
     shuffleImages();
     setIsMobileMenuOpen(false);
   }, [shuffleImages]);
+
+  // 全局拖放处理
+  const handleGlobalFilesDropped = useCallback((files: File[]) => {
+    if (!isAdmin) {
+      toast.error('无上传权限', { description: '请先登录管理员账号' });
+      return;
+    }
+    setPendingFiles(files);
+    if (!isUploadModalOpen) {
+      setIsUploadModalOpen(true);
+    }
+  }, [isUploadModalOpen, isAdmin]);
+
+  const handleFilesConsumed = useCallback(() => {
+    setPendingFiles(null);
+  }, []);
 
   const handleBulkDownload = useCallback(async () => {
     if (selectedImageIds.size === 0) return;
@@ -383,6 +428,13 @@ export default function Home() {
         <div className="absolute bottom-0 right-0 w-[1200px] h-[200px] bg-cyan-500/25 rounded-full blur-[120px] translate-x-1/3 translate-y-1/2 pointer-events-none" />
       </div>
 
+      {/* Global Drop Zone */}
+      <GlobalDropZone
+        isUploadModalOpen={isUploadModalOpen}
+        hasImageModal={selectedImage !== null}
+        onFilesDropped={handleGlobalFilesDropped}
+      />
+
       {/* Mobile Header */}
       <MobileHeader
         totalAssets={totalAssets}
@@ -415,14 +467,6 @@ export default function Home() {
         sortMode={sortMode}
         setSortMode={setSortMode}
         setRandomSeed={setRandomSeed}
-        // Selection
-        isSelectionMode={isSelectionMode}
-        setIsSelectionMode={setIsSelectionMode}
-        selectedImageIds={selectedImageIds}
-        onBulkDownload={handleBulkDownload}
-        onBatchDelete={handleBatchDelete}
-        isBulkDownloading={isBulkDownloading}
-        isDeleting={isDeleting}
         // Mobile
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
@@ -438,7 +482,7 @@ export default function Home() {
       {/* Main Content */}
       <main
         ref={scrollContainerRef}
-        className="flex-1 h-full overflow-y-auto relative z-[2] p-4 md:p-10 lg:p-12 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent pt-16 md:pt-10"
+        className="flex-1 h-full overflow-y-auto relative z-[2] p-4 md:p-10 lg:p-12 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent pt-16 md:pt-10 select-none"
       >
         <div className="max-w-[2000px] mx-auto min-h-full pb-20">
           {/* Error State */}
@@ -459,6 +503,7 @@ export default function Home() {
               onDelete={handleCardDelete}
               isAdmin={isAdmin}
               loadMoreRef={loadMoreRef}
+              onCardRectsChange={setCardRects}
             />
           )}
         </div>
@@ -475,7 +520,6 @@ export default function Home() {
         onUpdateImage={updateImage}
         onToggleLiked={toggleLiked}
         isAdmin={isAdmin}
-        isDeleting={isDeleting}
       />
 
       {/* Delete Confirmation Modal */}
@@ -493,6 +537,8 @@ export default function Home() {
         onStartUpload={(tasks) => {
           uploadQueue.addTasks(tasks);
         }}
+        initialFiles={pendingFiles}
+        onFilesConsumed={handleFilesConsumed}
       />
 
       {/* Upload Progress */}
@@ -507,6 +553,30 @@ export default function Home() {
 
       {/* Scroll To Top Button */}
       <ScrollToTop scrollContainerRef={scrollContainerRef} />
+
+      {/* Selection Box (框选矩形) */}
+      <SelectionBox
+        selectionBox={selectionBox}
+        scrollContainerRef={scrollContainerRef}
+      />
+
+      {/* Selection Action Bar (底部操作栏) - 框选过程中不显示 */}
+      <SelectionActionBar
+        isVisible={isSelectionMode && selectedImageIds.size > 0 && !isSelecting}
+        selectedCount={selectedImageIds.size}
+        isAdmin={isAdmin}
+        isProcessing={isBatchProcessing || isBulkDownloading}
+        onDownload={handleBulkDownload}
+        onBatchLike={batchLike}
+        onBatchDelete={handleBatchDelete}
+        onBatchUpdateModel={batchUpdateModel}
+        onBatchUpdateStyle={batchUpdateStyle}
+        onClose={() => {
+          setIsSelectionMode(false);
+          clearSelection();
+        }}
+        availableStyles={availableStyles}
+      />
     </div>
   );
 }

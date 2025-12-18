@@ -55,9 +55,11 @@ interface UploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onStartUpload: (tasks: UploadTask[]) => void;
+  initialFiles?: File[] | null;
+  onFilesConsumed?: () => void;
 }
 
-export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps) {
+export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFilesConsumed }: UploadModalProps) {
   const [files, setFiles] = useState<FileWithPreview[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
@@ -700,6 +702,14 @@ export function UploadModal({ isOpen, onClose, onStartUpload }: UploadModalProps
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, tryClose, showCloseConfirm, phase, files, selectedFileId, toggleSelectAll, removeSelectedFiles]);
+
+  // 处理从全局拖放传入的初始文件
+  useEffect(() => {
+    if (initialFiles && initialFiles.length > 0 && isOpen) {
+      handleFilesSelected(initialFiles);
+      onFilesConsumed?.();
+    }
+  }, [initialFiles, isOpen, handleFilesSelected, onFilesConsumed]);
 
   if (!isOpen) return null;
 
