@@ -19,6 +19,7 @@
   dominant_color?: string | null;
   like_count?: number;
   favorite?: number;
+  deleted_at?: number | null;  // 软删除时间戳，null 表示未删除
 }
 
 export interface ApiResponse {
@@ -45,7 +46,7 @@ export interface ImageCardProps {
   onImageClick: (img: Image) => void;
   onToggleLiked?: (id: number) => void;
   onDownload?: (id: number, filename: string) => void;
-  onDelete?: (id: number, e: React.MouseEvent) => void;
+  onDelete?: (id: number) => void;
   isAdmin?: boolean;
   loadHighRes?: boolean;
 }

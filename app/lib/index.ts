@@ -33,3 +33,6 @@ export {
   clearImageCache,
   deleteSourceFile,
 } from './cache';
+
+// 文件工具
+export { findActualFilePath } from './file-utils';

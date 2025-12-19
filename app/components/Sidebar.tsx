@@ -1,8 +1,9 @@
 ﻿'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, X, Grid, LayoutGrid, Maximize, Shuffle, Clock, Check, Upload, Lock, LogOut, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, X, Grid, LayoutGrid, Maximize, Shuffle, Clock, Check, Upload, Lock, LogOut, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import type { GridSize, SortMode } from '../types';
 import { MODEL_BASES, STYLE_SOURCES } from '../lib/constants';
 import type { StyleSource } from '../lib/constants';
@@ -467,25 +468,44 @@ export function Sidebar({
           </div>
         </div>
 
-        {/* Auth Section (Footer) */}
+        {/* Auth Section (Footer) - 两列布局 */}
         <div className="p-6 border-t border-white/10 bg-black/20">
-          {isAdmin ? (
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-white/5"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              退出管理
-            </button>
-          ) : (
-            <button
-              onClick={() => setShowLoginModal(true)}
-              className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-white/5"
-            >
-              <Lock className="w-3.5 h-3.5" />
-              管理员登录
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* 左列：登录/退出 */}
+            <div className="flex-1">
+              {isAdmin ? (
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-white/5"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  退出管理
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowLoginModal(true)}
+                  className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-white/5"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  管理员登录
+                </button>
+              )}
+            </div>
+
+            {/* 分隔线 */}
+            <div className="w-px h-6 bg-white/10" />
+
+            {/* 右列：回收站入口 */}
+            <div className="flex-1">
+              <Link
+                href="/trash"
+                className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-gray-300 py-2 rounded-lg text-xs font-medium transition-colors hover:bg-white/5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                回收站
+              </Link>
+            </div>
+          </div>
         </div>
       </aside>
 

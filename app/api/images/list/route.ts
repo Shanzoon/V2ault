@@ -48,6 +48,9 @@ export async function GET(request: Request) {
       const params: (string | number)[] = [];
       const whereConditions: string[] = [];
 
+      // 排除已删除的图片
+      whereConditions.push('deleted_at IS NULL');
+
       // 【修复】超级搜索：同时搜 Prompt、文件名、路径
       if (search) {
         // COALESCE 确保即使字段是 NULL 也不会报错

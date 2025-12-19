@@ -13,3 +13,7 @@ export { SelectionBox } from './SelectionBox';
 export { SelectionActionBar } from './SelectionActionBar';
 export { BatchEditMenu } from './BatchEditMenu';
 export { StyleCascadeMenu } from './StyleCascadeMenu';
+export { TrashImageCard } from './TrashImageCard';
+export { TrashImageGrid } from './TrashImageGrid';
+export { TrashActionBar } from './TrashActionBar';
+export { EmptyTrashConfirmModal } from './EmptyTrashConfirmModal';

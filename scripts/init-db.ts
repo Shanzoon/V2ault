@@ -36,12 +36,14 @@ CREATE TABLE IF NOT EXISTS images (
     blurhash TEXT,
     dominant_color TEXT,
     like_count INTEGER NOT NULL DEFAULT 0,
-    favorite INTEGER NOT NULL DEFAULT 0
+    favorite INTEGER NOT NULL DEFAULT 0,
+    deleted_at INTEGER DEFAULT NULL
 );
 `;
 
 const createIndexCreatedAt = `CREATE INDEX IF NOT EXISTS idx_images_created_at ON images(created_at DESC);`;
 const createIndexPrompt = `CREATE INDEX IF NOT EXISTS idx_images_prompt ON images(prompt);`;
+const createIndexDeletedAt = `CREATE INDEX IF NOT EXISTS idx_images_deleted_at ON images(deleted_at);`;
 
 try {
   // 开启 WAL 模式
@@ -59,6 +61,7 @@ try {
   const migrations: { name: string; sql: string }[] = [
     { name: 'model_base', sql: 'ALTER TABLE images ADD COLUMN model_base TEXT' },
     { name: 'style_ref', sql: 'ALTER TABLE images ADD COLUMN style_ref TEXT' },
+    { name: 'deleted_at', sql: 'ALTER TABLE images ADD COLUMN deleted_at INTEGER DEFAULT NULL' },
   ];
 
   for (const migration of migrations) {
@@ -71,6 +74,7 @@ try {
   // 创建索引
   db.exec(createIndexCreatedAt);
   db.exec(createIndexPrompt);
+  db.exec(createIndexDeletedAt);
 
   // 整理数据库
   db.exec('VACUUM;');

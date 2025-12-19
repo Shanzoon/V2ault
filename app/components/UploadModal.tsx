@@ -26,12 +26,42 @@ import { useStyles } from '../hooks/useStyles';
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 const MAX_FILE_COUNT = 500; // 单次最大文件数量
 
-// 输入校验正则：只允许中文、英文、数字、空格、下划线、中划线、点号
-const VALID_INPUT_REGEX = /^[\u4e00-\u9fa5a-zA-Z0-9\s_.\-]*$/;
+// localStorage key for remembering upload defaults
+const UPLOAD_DEFAULTS_KEY = 'v2ault_upload_defaults';
 
-// 校验输入是否合法
-const validateInput = (value: string): boolean => {
-  return VALID_INPUT_REGEX.test(value);
+interface UploadDefaults {
+  model_base: ModelBase;
+  source: StyleSource;
+}
+
+// 获取保存的默认设置
+const getUploadDefaults = (): UploadDefaults => {
+  if (typeof window === 'undefined') {
+    return { model_base: MODEL_BASES[0], source: STYLE_SOURCES[0] };
+  }
+  try {
+    const saved = localStorage.getItem(UPLOAD_DEFAULTS_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // 验证保存的值是否有效
+      if (MODEL_BASES.includes(parsed.model_base) && STYLE_SOURCES.includes(parsed.source)) {
+        return parsed;
+      }
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return { model_base: MODEL_BASES[0], source: STYLE_SOURCES[0] };
+};
+
+// 保存默认设置
+const saveUploadDefaults = (defaults: UploadDefaults) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(UPLOAD_DEFAULTS_KEY, JSON.stringify(defaults));
+  } catch {
+    // ignore storage errors
+  }
 };
 
 interface FileMetadata {
@@ -69,24 +99,18 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
   const [dragOverFileId, setDragOverFileId] = useState<string | null>(null); // 拖拽悬停目标
   const fileInputRef = useRef<HTMLInputElement>(null);
   const thumbnailContainerRef = useRef<HTMLDivElement>(null);
-
-  // 批量应用状态
-  const [batchModelBase, setBatchModelBase] = useState<ModelBase | ''>('');
-  const [batchSource, setBatchSource] = useState<StyleSource | ''>('');
-  const [batchStyle, setBatchStyle] = useState('');
-  const [batchImportedAt, setBatchImportedAt] = useState('');
+  const isComposingRef = useRef(false); // IME 中文输入组合状态
 
   // 风格输入预测状态
   const [showStyleSuggestions, setShowStyleSuggestions] = useState(false);
-  const [showBatchStyleSuggestions, setShowBatchStyleSuggestions] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [deletedFiles, setDeletedFiles] = useState<FileWithPreview[]>([]); // 删除回收站（用于撤销）
   const [isLoadingFiles, setIsLoadingFiles] = useState(false); // 文件加载状态
   const [loadingProgress, setLoadingProgress] = useState({ current: 0, total: 0 }); // 加载进度
   const { availableStyles } = useStyles();
 
-  // 根据文件数量自动判断阶段
-  const phase = files.length === 0 ? 'select' : 'edit';
+  // 根据文件数量自动判断阶段（有 initialFiles 时直接进入 edit 跳过中间过渡）
+  const phase = (files.length === 0 && !initialFiles?.length) ? 'select' : 'edit';
 
   const selectedFile = files.find((f) => f.id === selectedFileId);
 
@@ -101,14 +125,6 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
       .filter((s) => s.toLowerCase().includes(styleInput.toLowerCase()))
       .slice(0, 8);
   }, [availableStyles, selectedFile?.metadata.source, selectedFile?.metadata.style]);
-
-  // 批量风格建议过滤
-  const filteredBatchStyles = useMemo(() => {
-    if (!batchSource) return [];
-    const sourceStyles = availableStyles[batchSource] || [];
-    if (!batchStyle) return sourceStyles;
-    return sourceStyles.filter((s) => s.toLowerCase().includes(batchStyle.toLowerCase()));
-  }, [availableStyles, batchSource, batchStyle]);
 
   // ===== 批量选择功能 =====
   // 处理缩略图点击（支持 Ctrl 多选和 Shift 范围选择）
@@ -228,6 +244,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
     }
 
     const metadataToCopy = {
+      prompt: selectedFile.metadata.prompt,
       model_base: selectedFile.metadata.model_base,
       source: selectedFile.metadata.source,
       style: selectedFile.metadata.style,
@@ -336,6 +353,9 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
 
       if (validFiles.length === 0) return;
 
+      // 获取默认设置
+      const defaults = getUploadDefaults();
+
       // 大于 10 张图片时显示加载状态
       const showProgress = validFiles.length > 10;
       if (showProgress) {
@@ -359,8 +379,8 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
             metadata: {
               title: file.name.replace(/\.[^/.]+$/, ''),
               prompt: '',
-              model_base: '',
-              source: '',
+              model_base: defaults.model_base,
+              source: defaults.source,
               style: '',
               imported_at: '',
             },
@@ -499,57 +519,17 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
     [availableStyles]
   );
 
-  // 批量应用
-  const applyBatch = useCallback(() => {
-    if (!batchModelBase && !batchSource && !batchStyle && !batchImportedAt) {
-      toast.error('请至少填写一项批量应用内容');
-      return;
-    }
-
-    // 校验输入
-    if (batchStyle && !validateInput(batchStyle)) {
-      toast.error('风格只允许中文、英文、数字、空格、下划线、中划线、点号');
-      return;
-    }
-    if (batchImportedAt && !validateInput(batchImportedAt)) {
-      toast.error('风格参照只允许中文、英文、数字、空格、下划线、中划线、点号');
-      return;
-    }
-
-    setFiles((prev) =>
-      prev.map((f) => ({
-        ...f,
-        metadata: {
-          ...f.metadata,
-          ...(batchModelBase ? { model_base: batchModelBase } : {}),
-          ...(batchSource ? { source: batchSource } : {}),
-          ...(batchStyle ? { style: batchStyle } : {}),
-          ...(batchImportedAt ? { imported_at: batchImportedAt } : {}),
-        },
-      }))
-    );
-    toast.success('已批量应用设置');
-  }, [batchModelBase, batchSource, batchStyle, batchImportedAt]);
-
   // 开始上传（传递任务到全局队列）
   const handleUpload = useCallback(() => {
     if (files.length === 0) return;
 
-    // 校验所有文件的必填字段和输入合法性
-    const invalidFiles: string[] = [];
+    // 校验所有文件的必填字段
     const missingRequired: string[] = [];
 
     for (const f of files) {
       // 检查必填字段
       if (!f.metadata.model_base || !f.metadata.source) {
         missingRequired.push(f.metadata.title);
-      }
-      // 检查输入合法性
-      if (f.metadata.style && !validateInput(f.metadata.style)) {
-        invalidFiles.push(`${f.metadata.title} (风格)`);
-      }
-      if (f.metadata.imported_at && !validateInput(f.metadata.imported_at)) {
-        invalidFiles.push(`${f.metadata.title} (风格参照)`);
       }
     }
 
@@ -560,11 +540,12 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
       return;
     }
 
-    if (invalidFiles.length > 0) {
-      const displayNames = invalidFiles.slice(0, 3).join(', ');
-      const more = invalidFiles.length > 3 ? ` 等 ${invalidFiles.length} 个问题` : '';
-      toast.error(`输入包含非法字符（仅允许中文、英文、数字、空格、下划线、中划线、点号）: ${displayNames}${more}`);
-      return;
+    // 保存当前设置作为下次默认值
+    if (files[0]?.metadata.model_base && files[0]?.metadata.source) {
+      saveUploadDefaults({
+        model_base: files[0].metadata.model_base as ModelBase,
+        source: files[0].metadata.source as StyleSource,
+      });
     }
 
     // 构建任务列表，字段映射到 API 字段名
@@ -588,10 +569,6 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
     // 重置状态
     setFiles([]);
     setSelectedFileId(null);
-    setBatchModelBase('');
-    setBatchSource('');
-    setBatchStyle('');
-    setBatchImportedAt('');
 
     // 传递任务并关闭弹窗
     onStartUpload(tasks);
@@ -611,10 +588,6 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
     setLastClickedId(null);
     setDraggedFileId(null);
     setDragOverFileId(null);
-    setBatchModelBase('');
-    setBatchSource('');
-    setBatchStyle('');
-    setBatchImportedAt('');
     setShowCloseConfirm(false);
     onClose();
   }, [files, deletedFiles, onClose]);
@@ -674,7 +647,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
           return;
         }
 
-        const cols = 6; // 网格列数
+        const cols = 8; // 网格列数
         let newIndex = currentIndex;
 
         switch (e.key) {
@@ -894,7 +867,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                   <div className="flex-1 flex overflow-hidden">
                     {/* ===== 左侧：预览 + 缩略图 ===== */}
                     <div
-                      className={`w-1/2 flex flex-col border-r border-white/[0.08] transition-all duration-300 ${
+                      className={`w-[58%] flex flex-col border-r border-white/[0.08] transition-all duration-300 ${
                         isDragOver ? 'bg-orange-500/5 ring-2 ring-inset ring-orange-500/30' : ''
                       }`}
                       onDragOver={handleDragOver}
@@ -966,7 +939,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                           </span>
                         </div>
 
-                        <div className="grid grid-cols-6 gap-2">
+                        <div className="grid grid-cols-8 gap-0.5">
                           {/* 上传按钮 - 常驻第一位 */}
                           <div
                             onClick={() => fileInputRef.current?.click()}
@@ -1043,6 +1016,16 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                               </div>
                             );
                           })}
+
+                          {/* 加载中的骨架屏占位符 */}
+                          {isLoadingFiles && loadingProgress.total > files.length &&
+                            Array.from({ length: Math.min(loadingProgress.total - files.length, 23) }).map((_, i) => (
+                              <div
+                                key={`skeleton-${i}`}
+                                className="aspect-square rounded-xl bg-white/[0.03] animate-pulse"
+                              />
+                            ))
+                          }
                         </div>
                       </div>
 
@@ -1057,22 +1040,9 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                     </div>
 
                     {/* ===== 右侧：元数据编辑 ===== */}
-                    <div className="w-1/2 flex flex-col overflow-hidden">
+                    <div className="w-[42%] flex flex-col overflow-hidden">
                       {selectedFile ? (
-                        <div className="flex-1 overflow-y-auto p-6 space-y-5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                          {/* 复制元数据按钮 */}
-                          {files.length > 1 && (
-                            <button
-                              onClick={copyMetadataToSelected}
-                              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-300 border border-blue-500/20 hover:from-blue-500/20 hover:to-purple-500/20 hover:border-blue-500/30"
-                            >
-                              <Copy className="w-4 h-4" />
-                              {selectedFileIds.size > 0
-                                ? `复制设置到已选的 ${selectedFileIds.size - (selectedFileIds.has(selectedFileId!) ? 1 : 0)} 张图片`
-                                : `复制设置到其他 ${files.length - 1} 张图片`}
-                            </button>
-                          )}
-
+                        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
                           {/* 标题 */}
                           <div className="space-y-2">
                             <label className="flex items-center gap-2 text-xs font-medium text-gray-400 uppercase tracking-wider">
@@ -1093,7 +1063,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                           {/* 模型基底 - 点选按钮 */}
                           <div className="space-y-3">
                             <label className="flex items-center gap-2 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                              <Box className="w-3.5 h-3.5 text-cyan-500" />
+                              <Box className="w-3.5 h-3.5 text-orange-400" />
                               模型基底 <span className="text-orange-400">*</span>
                             </label>
                             <div className="grid grid-cols-4 gap-2">
@@ -1106,7 +1076,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                                   }
                                   className={`px-3 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 ${
                                     selectedFile.metadata.model_base === base
-                                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-500/10'
+                                      ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40 shadow-lg shadow-orange-500/10'
                                       : 'bg-white/[0.03] text-gray-400 border border-white/[0.08] hover:bg-white/[0.06] hover:text-white'
                                   }`}
                                 >
@@ -1119,7 +1089,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                           {/* 风格大类 - 点选按钮 */}
                           <div className="space-y-3">
                             <label className="flex items-center gap-2 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                              <Palette className="w-3.5 h-3.5 text-indigo-500" />
+                              <Palette className="w-3.5 h-3.5 text-orange-400" />
                               风格大类 <span className="text-orange-400">*</span>
                             </label>
                             <div className="flex gap-2">
@@ -1132,7 +1102,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                                   }
                                   className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
                                     selectedFile.metadata.source === src
-                                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-lg shadow-indigo-500/10'
+                                      ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40 shadow-lg shadow-orange-500/10'
                                       : 'bg-white/[0.03] text-gray-400 border border-white/[0.08] hover:bg-white/[0.06] hover:text-white'
                                   }`}
                                 >
@@ -1145,7 +1115,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                           {/* 具体风格 - 带输入预测 */}
                           <div className="space-y-2">
                             <label className="flex items-center gap-2 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                              <Layers className="w-3.5 h-3.5 text-purple-500" />
+                              <Layers className="w-3.5 h-3.5 text-orange-400" />
                               具体风格
                             </label>
                             <div className="relative">
@@ -1158,7 +1128,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                                 }}
                                 onFocus={() => setShowStyleSuggestions(true)}
                                 onBlur={() => setTimeout(() => setShowStyleSuggestions(false), 200)}
-                                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:border-purple-500/50 focus:bg-white/[0.05] focus:outline-none transition-all duration-200"
+                                className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:border-orange-500/50 focus:bg-white/[0.05] focus:outline-none transition-all duration-200"
                                 placeholder={selectedFile.metadata.source ? "输入或选择风格..." : "请先选择风格大类"}
                                 disabled={!selectedFile.metadata.source}
                               />
@@ -1174,7 +1144,7 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                                           updateFileMetadata(selectedFile.id, { style });
                                           setShowStyleSuggestions(false);
                                         }}
-                                        className="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-purple-500/10 hover:text-purple-300 transition-colors"
+                                        className="w-full px-4 py-2.5 text-left text-sm text-gray-300 hover:bg-orange-500/10 hover:text-orange-300 transition-colors"
                                       >
                                         {style}
                                       </button>
@@ -1188,16 +1158,25 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                           {/* 风格参照 */}
                           <div className="space-y-2">
                             <label className="flex items-center gap-2 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                              <Sparkles className="w-3.5 h-3.5 text-yellow-500" />
+                              <Sparkles className="w-3.5 h-3.5 text-orange-400" />
                               风格参照 (Style Ref/LoRA)
                             </label>
                             <input
                               type="text"
                               value={selectedFile.metadata.imported_at}
-                              onChange={(e) =>
-                                updateFileMetadata(selectedFile.id, { imported_at: e.target.value })
-                              }
-                              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:border-yellow-500/50 focus:bg-white/[0.05] focus:outline-none transition-all duration-200"
+                              onChange={(e) => {
+                                // IME 组合输入期间也更新（让用户看到输入），但在 compositionEnd 时会最终确认
+                                updateFileMetadata(selectedFile.id, { imported_at: e.target.value });
+                              }}
+                              onCompositionStart={() => {
+                                isComposingRef.current = true;
+                              }}
+                              onCompositionEnd={(e) => {
+                                isComposingRef.current = false;
+                                // 确保最终值被更新
+                                updateFileMetadata(selectedFile.id, { imported_at: e.currentTarget.value });
+                              }}
+                              className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:border-orange-500/50 focus:bg-white/[0.05] focus:outline-none transition-all duration-200"
                               placeholder="输入风格代码或 LoRA 名称..."
                             />
                           </div>
@@ -1217,6 +1196,19 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                               placeholder="输入生成提示词..."
                             />
                           </div>
+
+                          {/* 复制元数据按钮 */}
+                          {files.length > 1 && (
+                            <button
+                              onClick={copyMetadataToSelected}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 bg-orange-500/10 text-orange-300 border border-orange-500/20 hover:bg-orange-500/20 hover:border-orange-500/30"
+                            >
+                              <Copy className="w-4 h-4" />
+                              {selectedFileIds.size > 0
+                                ? `复制设置到已选的 ${selectedFileIds.size - (selectedFileIds.has(selectedFileId!) ? 1 : 0)} 张图片`
+                                : `复制设置到其他 ${files.length - 1} 张图片`}
+                            </button>
+                          )}
                         </div>
                       ) : (
                         <div className="flex-1 flex items-center justify-center">
@@ -1225,103 +1217,6 @@ export function UploadModal({ isOpen, onClose, onStartUpload, initialFiles, onFi
                               <ImageIcon className="w-12 h-12 text-gray-700" />
                             </div>
                             <p className="text-gray-600 text-sm">选择一张图片编辑元数据</p>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* 批量操作区 */}
-                      {files.length > 1 && (
-                        <div className="p-5 border-t border-white/[0.08] bg-black/20">
-                          <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-4">
-                            批量应用到所有图片
-                          </p>
-                          <div className="space-y-3">
-                            {/* 模型基底批量 - 点选 */}
-                            <div className="grid grid-cols-4 gap-1.5">
-                              {MODEL_BASES.map((base) => (
-                                <button
-                                  key={base}
-                                  type="button"
-                                  onClick={() => setBatchModelBase(base)}
-                                  className={`px-2 py-1.5 rounded-lg text-[10px] font-medium transition-all duration-200 ${
-                                    batchModelBase === base
-                                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
-                                      : 'bg-white/[0.03] text-gray-500 border border-white/[0.06] hover:bg-white/[0.06] hover:text-gray-300'
-                                  }`}
-                                >
-                                  {base}
-                                </button>
-                              ))}
-                            </div>
-                            {/* 风格大类批量 */}
-                            <div className="flex gap-2">
-                              {STYLE_SOURCES.map((src) => (
-                                <button
-                                  key={src}
-                                  type="button"
-                                  onClick={() => setBatchSource(src)}
-                                  className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 ${
-                                    batchSource === src
-                                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                                      : 'bg-white/[0.03] text-gray-500 border border-white/[0.06] hover:bg-white/[0.06] hover:text-gray-300'
-                                  }`}
-                                >
-                                  {src}
-                                </button>
-                              ))}
-                            </div>
-                            {/* 其他批量字段 */}
-                            <div className="flex gap-2">
-                              {/* 具体风格 - 带输入预测 */}
-                              <div className="relative flex-1">
-                                <input
-                                  type="text"
-                                  value={batchStyle}
-                                  onChange={(e) => {
-                                    setBatchStyle(e.target.value);
-                                    setShowBatchStyleSuggestions(true);
-                                  }}
-                                  onFocus={() => setShowBatchStyleSuggestions(true)}
-                                  onBlur={() => setTimeout(() => setShowBatchStyleSuggestions(false), 200)}
-                                  placeholder={batchSource ? "输入或选择风格..." : "请先选择风格大类"}
-                                  disabled={!batchSource}
-                                  className="w-full bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600 focus:border-purple-500/50 focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                                />
-                                {/* 下拉建议 */}
-                                {showBatchStyleSuggestions && filteredBatchStyles.length > 0 && batchSource && (
-                                  <div className="absolute z-30 w-full bottom-full mb-1 bg-[#1a1a1a]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-xl overflow-hidden">
-                                    <div className="max-h-[280px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10">
-                                      {filteredBatchStyles.map((style) => (
-                                        <button
-                                          key={style}
-                                          type="button"
-                                          onMouseDown={() => {
-                                            setBatchStyle(style);
-                                            setShowBatchStyleSuggestions(false);
-                                          }}
-                                          className="w-full px-3 py-2 text-left text-xs text-gray-300 hover:bg-purple-500/10 hover:text-purple-300 transition-colors"
-                                        >
-                                          {style}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                              <input
-                                type="text"
-                                value={batchImportedAt}
-                                onChange={(e) => setBatchImportedAt(e.target.value)}
-                                placeholder="风格参照"
-                                className="flex-1 bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600 focus:border-yellow-500/50 focus:outline-none transition-all duration-200"
-                              />
-                              <button
-                                onClick={applyBatch}
-                                className="px-4 py-2 bg-white/[0.06] hover:bg-orange-500/20 hover:text-orange-300 text-white rounded-lg text-xs font-medium transition-all duration-200 border border-transparent hover:border-orange-500/30"
-                              >
-                                应用
-                              </button>
-                            </div>
                           </div>
                         </div>
                       )}

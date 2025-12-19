@@ -3,14 +3,13 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 
-import type { Image, GridSize, DeleteConfirmation } from './types';
+import type { Image, GridSize } from './types';
 import { useImages, useSelection, useKeyboardShortcuts, useUploadQueue, useAuth, useStyles, useBoxSelection, useBatchEdit } from './hooks';
 import {
   ImageModal,
   ImageGrid,
   Sidebar,
   MobileHeader,
-  DeleteConfirmModal,
   UploadModal,
   UploadProgress,
   DatabaseErrorBanner,
@@ -92,30 +91,15 @@ export default function Home() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isBulkDownloading, setIsBulkDownloading] = useState(false);
 
-  // Delete Confirmation State
-  const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmation>({
-    show: false,
-    type: null,
-    triggerRect: null,
-  });
-
-  // 单图删除的临时存储
-  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
-
-  // 延迟删除的 timeout ref（用于撤销）
-  const deleteTimeoutRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
-
   // Upload Modal State
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
 
   // Refs
-  const singleDeleteBtnRef = useRef<HTMLButtonElement>(null);
-  const bulkDeleteBtnRef = useRef<HTMLButtonElement>(null);
   const scrollContainerRef = useRef<HTMLElement>(null);
 
   // Box Selection Hook (框选)
-  const boxSelectionEnabled = !isUploadModalOpen && !selectedImage && !deleteConfirmation.show;
+  const boxSelectionEnabled = !isUploadModalOpen && !selectedImage;
   const { selectionBox, isSelecting } = useBoxSelection({
     enabled: boxSelectionEnabled,
     scrollContainerRef,
@@ -128,11 +112,17 @@ export default function Home() {
   });
 
   // Batch Edit Hook (批量编辑)
+  const exitSelectionMode = useCallback(() => {
+    setIsSelectionMode(false);
+    clearSelection();
+  }, [setIsSelectionMode, clearSelection]);
+
   const { isProcessing: isBatchProcessing, batchLike, batchUpdateModel, batchUpdateStyle } = useBatchEdit({
     selectedImageIds,
     images,
     updateImages,
     onStyleChange: refetchStyles,
+    onOperationComplete: exitSelectionMode,
   });
 
   // Scroll to top effect
@@ -222,11 +212,30 @@ export default function Home() {
     }
   }, [selectedImageIds, images, clearSelection, setIsSelectionMode]);
 
-  const handleBatchDelete = useCallback((e?: React.MouseEvent) => {
+  const handleBatchDelete = useCallback(async () => {
     if (selectedImageIds.size === 0) return;
-    const rect = e?.currentTarget.getBoundingClientRect() || bulkDeleteBtnRef.current?.getBoundingClientRect();
-    setDeleteConfirmation({ show: true, type: 'batch', triggerRect: rect });
-  }, [selectedImageIds.size]);
+
+    const idsToDelete = Array.from(selectedImageIds);
+
+    try {
+      const res = await fetch('/api/images/batch', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: idsToDelete }),
+      });
+
+      if (!res.ok) throw new Error('Delete failed');
+
+      // 成功后从 UI 移除
+      removeImages(selectedImageIds);
+      clearSelection();
+      setIsSelectionMode(false);
+      toast.success(`已移至回收站 ${idsToDelete.length} 张图片`);
+    } catch (error) {
+      console.error('Error deleting images:', error);
+      toast.error('删除失败');
+    }
+  }, [selectedImageIds, removeImages, clearSelection, setIsSelectionMode]);
 
   // 单图下载
   const handleSingleDownload = useCallback(async (id: number, filename: string) => {
@@ -242,167 +251,59 @@ export default function Home() {
   }, []);
 
   // 从卡片菜单删除单图
-  const handleCardDelete = useCallback((id: number, e: React.MouseEvent) => {
-    setPendingDeleteId(id);
-    const rect = e.currentTarget.getBoundingClientRect();
-    setDeleteConfirmation({ show: true, type: 'single', triggerRect: rect });
-  }, []);
+  const handleCardDelete = useCallback(async (id: number) => {
+    const imageToDelete = images.find(img => img.id === id);
+    if (!imageToDelete) return;
 
-  const handleSingleDelete = useCallback((e?: React.MouseEvent) => {
-    if (!selectedImage) return;
-    const rect = e?.currentTarget.getBoundingClientRect() || singleDeleteBtnRef.current?.getBoundingClientRect();
-    setDeleteConfirmation({ show: true, type: 'single', triggerRect: rect });
-  }, [selectedImage]);
+    try {
+      const res = await fetch(`/api/images/${id}`, { method: 'DELETE' });
 
-  const executeDelete = useCallback(async () => {
-    if (deleteConfirmation.type === 'batch') {
-      // 批量删除 - 支持撤销
-      const idsToDelete = Array.from(selectedImageIds);
-      const imagesToDelete = images.filter(img => selectedImageIds.has(img.id));
+      if (!res.ok) throw new Error('Delete failed');
 
-      if (imagesToDelete.length === 0) {
-        setDeleteConfirmation({ show: false, type: null });
-        return;
-      }
-
-      // 先从 UI 移除（乐观更新）
-      removeImages(selectedImageIds);
-      clearSelection();
-      setDeleteConfirmation({ show: false, type: null });
-
-      const deleteKey = `batch-${Date.now()}`;
-
-      // 显示带撤销按钮的 toast
-      toast(`已删除 ${imagesToDelete.length} 张图片`, {
-        action: {
-          label: '撤销',
-          onClick: () => {
-            // 清除延迟删除的 timeout
-            if (deleteTimeoutRef.current[deleteKey]) {
-              clearTimeout(deleteTimeoutRef.current[deleteKey]);
-              delete deleteTimeoutRef.current[deleteKey];
-            }
-            // 恢复图片
-            restoreImages(imagesToDelete);
-            toast.success(`已恢复 ${imagesToDelete.length} 张图片`);
-          },
-        },
-        duration: 3000,
-        onDismiss: () => {
-          // toast 消失时检查是否已被撤销
-          if (!deleteTimeoutRef.current[deleteKey]) return;
-
-          // 真正执行 API 删除
-          fetch('/api/images/batch', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: idsToDelete }),
-          }).catch(error => {
-            console.error('Error deleting images:', error);
-            // 删除失败，恢复图片
-            restoreImages(imagesToDelete);
-            toast.error('删除失败，已恢复图片');
-          });
-
-          delete deleteTimeoutRef.current[deleteKey];
-        },
-      });
-
-      // 设置一个 marker，表示删除操作未被撤销
-      deleteTimeoutRef.current[deleteKey] = setTimeout(() => {}, 0);
-
-    } else if (deleteConfirmation.type === 'single') {
-      // 单图删除 - 支持撤销
-      const targetId = pendingDeleteId || selectedImage?.id;
-      if (!targetId) return;
-
-      const imageToDelete = images.find(img => img.id === targetId);
-      if (!imageToDelete) {
-        setDeleteConfirmation({ show: false, type: null });
-        setPendingDeleteId(null);
-        return;
-      }
-
-      // 计算下一张图片（用于 Modal 导航）
-      let nextImage: Image | null = null;
-      let neighborId: number | undefined;
-      if (selectedImage && selectedImage.id === targetId) {
-        const currentIndex = images.findIndex(img => img.id === targetId);
-        if (images.length > 1) {
-          if (currentIndex < images.length - 1) {
-            nextImage = images[currentIndex + 1];
-            neighborId = nextImage.id;
-          } else if (currentIndex > 0) {
-            nextImage = images[currentIndex - 1];
-            neighborId = nextImage.id;
-          }
-        }
-      } else {
-        // 从卡片删除时，找相邻图片
-        const currentIndex = images.findIndex(img => img.id === targetId);
-        if (currentIndex < images.length - 1) {
-          neighborId = images[currentIndex + 1].id;
-        } else if (currentIndex > 0) {
-          neighborId = images[currentIndex - 1].id;
-        }
-      }
-
-      // 先从 UI 移除（乐观更新）
-      if (selectedImage && selectedImage.id === targetId) {
-        setSelectedImage(nextImage);
-      }
-      removeImage(targetId);
-      setDeleteConfirmation({ show: false, type: null });
-      setPendingDeleteId(null);
-
-      const deleteKey = `single-${targetId}`;
-
-      // 显示带撤销按钮的 toast
-      toast('已删除图片', {
-        description: imageToDelete.filename,
-        action: {
-          label: '撤销',
-          onClick: () => {
-            // 清除延迟删除的 timeout
-            if (deleteTimeoutRef.current[deleteKey]) {
-              clearTimeout(deleteTimeoutRef.current[deleteKey]);
-              delete deleteTimeoutRef.current[deleteKey];
-            }
-            // 恢复图片到原位置附近
-            restoreImage(imageToDelete, neighborId);
-            toast.success('已恢复图片');
-          },
-        },
-        duration: 3000,
-        onDismiss: () => {
-          // toast 消失时检查是否已被撤销
-          if (!deleteTimeoutRef.current[deleteKey]) return;
-
-          // 真正执行 API 删除
-          fetch(`/api/images/${targetId}`, {
-            method: 'DELETE',
-          }).catch(error => {
-            console.error('Error deleting image:', error);
-            // 删除失败，恢复图片
-            restoreImage(imageToDelete, neighborId);
-            toast.error('删除失败，已恢复图片');
-          });
-
-          delete deleteTimeoutRef.current[deleteKey];
-        },
-      });
-
-      // 设置一个 marker，表示删除操作未被撤销
-      deleteTimeoutRef.current[deleteKey] = setTimeout(() => {}, 0);
+      removeImage(id);
+      toast.success('已移至回收站');
+    } catch (error) {
+      console.error('Error deleting image:', error);
+      toast.error('删除失败');
     }
-  }, [deleteConfirmation.type, selectedImageIds, selectedImage, pendingDeleteId, images, removeImages, removeImage, restoreImage, restoreImages, clearSelection]);
+  }, [images, removeImage]);
+
+  const handleSingleDelete = useCallback(async () => {
+    if (!selectedImage) return;
+
+    const targetId = selectedImage.id;
+
+    // 计算下一张图片（用于 Modal 导航）
+    let nextImage: Image | null = null;
+    const currentIndex = images.findIndex(img => img.id === targetId);
+    if (images.length > 1) {
+      if (currentIndex < images.length - 1) {
+        nextImage = images[currentIndex + 1];
+      } else if (currentIndex > 0) {
+        nextImage = images[currentIndex - 1];
+      }
+    }
+
+    try {
+      const res = await fetch(`/api/images/${targetId}`, { method: 'DELETE' });
+
+      if (!res.ok) throw new Error('Delete failed');
+
+      // 成功后从 UI 移除
+      setSelectedImage(nextImage);
+      removeImage(targetId);
+      toast.success('已移至回收站');
+    } catch (error) {
+      console.error('Error deleting image:', error);
+      toast.error('删除失败');
+    }
+  }, [selectedImage, images, removeImage]);
 
   // Keyboard Shortcuts
   useKeyboardShortcuts({
     selectedImage,
     isFullscreen,
     isEditingPrompt: false,
-    deleteConfirmation,
     isSelectionMode,
     selectedImageIds,
     images,
@@ -411,12 +312,10 @@ export default function Home() {
     setIsFullscreen,
     setSelectedImage,
     setIsEditingPrompt: () => {},
-    setDeleteConfirmation,
     setIsSelectionMode,
     clearSelection,
     onBatchDelete: handleBatchDelete,
     onSingleDelete: handleSingleDelete,
-    executeDelete,
     onTitleClick: handleTitleClick,
   });
 
@@ -520,14 +419,6 @@ export default function Home() {
         onUpdateImage={updateImage}
         onToggleLiked={toggleLiked}
         isAdmin={isAdmin}
-      />
-
-      {/* Delete Confirmation Modal */}
-      <DeleteConfirmModal
-        deleteConfirmation={deleteConfirmation}
-        setDeleteConfirmation={setDeleteConfirmation}
-        selectedImageIds={selectedImageIds}
-        onConfirm={executeDelete}
       />
 
       {/* Upload Modal */}

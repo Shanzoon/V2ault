@@ -10,9 +10,10 @@ interface UseBatchEditOptions {
   images: Image[];
   updateImages: (ids: Set<number>, updates: Partial<Image>) => void;
   onStyleChange?: () => void; // 仅在风格变化时刷新风格列表
+  onOperationComplete?: () => void; // 操作完成后回调（用于退出多选模式）
 }
 
-export function useBatchEdit({ selectedImageIds, images, updateImages, onStyleChange }: UseBatchEditOptions) {
+export function useBatchEdit({ selectedImageIds, images, updateImages, onStyleChange, onOperationComplete }: UseBatchEditOptions) {
   const [isProcessing, setIsProcessing] = useState(false);
 
   // 批量喜欢
@@ -36,6 +37,7 @@ export function useBatchEdit({ selectedImageIds, images, updateImages, onStyleCh
       if (!res.ok) throw new Error('Failed to batch like');
 
       toast.success(`已为 ${selectedImageIds.size} 张图片点赞`);
+      onOperationComplete?.();
     } catch (error) {
       console.error('Batch like error:', error);
       // 回滚乐观更新
@@ -44,7 +46,7 @@ export function useBatchEdit({ selectedImageIds, images, updateImages, onStyleCh
     } finally {
       setIsProcessing(false);
     }
-  }, [selectedImageIds, updateImages]);
+  }, [selectedImageIds, updateImages, onOperationComplete]);
 
   // 批量修改模型
   const batchUpdateModel = useCallback(async (modelBase: string) => {
@@ -74,6 +76,7 @@ export function useBatchEdit({ selectedImageIds, images, updateImages, onStyleCh
       if (!res.ok) throw new Error('Failed to batch update model');
 
       toast.success(`已修改 ${selectedImageIds.size} 张图片的模型为 ${modelBase}`);
+      onOperationComplete?.();
     } catch (error) {
       console.error('Batch update model error:', error);
       // 回滚到原始值
@@ -84,7 +87,7 @@ export function useBatchEdit({ selectedImageIds, images, updateImages, onStyleCh
     } finally {
       setIsProcessing(false);
     }
-  }, [selectedImageIds, images, updateImages]);
+  }, [selectedImageIds, images, updateImages, onOperationComplete]);
 
   // 批量修改风格
   const batchUpdateStyle = useCallback(async (source: StyleSource, style: string) => {
@@ -119,6 +122,7 @@ export function useBatchEdit({ selectedImageIds, images, updateImages, onStyleCh
       toast.success(`已修改 ${selectedImageIds.size} 张图片的风格为 ${source}/${style}`);
       // 刷新风格列表（可能有新风格）
       onStyleChange?.();
+      onOperationComplete?.();
     } catch (error) {
       console.error('Batch update style error:', error);
       // 回滚到原始值
@@ -132,7 +136,7 @@ export function useBatchEdit({ selectedImageIds, images, updateImages, onStyleCh
     } finally {
       setIsProcessing(false);
     }
-  }, [selectedImageIds, images, updateImages, onStyleChange]);
+  }, [selectedImageIds, images, updateImages, onStyleChange, onOperationComplete]);
 
   return {
     isProcessing,

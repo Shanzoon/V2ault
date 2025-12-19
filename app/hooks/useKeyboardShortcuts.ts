@@ -2,7 +2,7 @@
 
 import { useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
-import type { Image, GridSize, DeleteConfirmation } from '../types';
+import type { Image, GridSize } from '../types';
 
 // 缩略图尺寸循环顺序
 const GRID_SIZE_CYCLE: GridSize[] = ['small', 'medium', 'large'];
@@ -16,7 +16,6 @@ interface UseKeyboardShortcutsOptions {
   selectedImage: Image | null;
   isFullscreen: boolean;
   isEditingPrompt: boolean;
-  deleteConfirmation: DeleteConfirmation;
   isSelectionMode: boolean;
   selectedImageIds: Set<number>;
   images: Image[];
@@ -25,12 +24,10 @@ interface UseKeyboardShortcutsOptions {
   setIsFullscreen: (value: boolean) => void;
   setSelectedImage: (img: Image | null) => void;
   setIsEditingPrompt: (value: boolean) => void;
-  setDeleteConfirmation: (value: DeleteConfirmation) => void;
   setIsSelectionMode: (value: boolean) => void;
   clearSelection: () => void;
   onBatchDelete: () => void;
   onSingleDelete: () => void;
-  executeDelete: () => void;
   onTitleClick: () => void;
 }
 
@@ -38,7 +35,6 @@ export function useKeyboardShortcuts({
   selectedImage,
   isFullscreen,
   isEditingPrompt,
-  deleteConfirmation,
   isSelectionMode,
   selectedImageIds,
   images,
@@ -47,12 +43,10 @@ export function useKeyboardShortcuts({
   setIsFullscreen,
   setSelectedImage,
   setIsEditingPrompt,
-  setDeleteConfirmation,
   setIsSelectionMode,
   clearSelection,
   onBatchDelete,
   onSingleDelete,
-  executeDelete,
   onTitleClick,
 }: UseKeyboardShortcutsOptions) {
   // 防抖：防止快速切换视角
@@ -78,7 +72,7 @@ export function useKeyboardShortcuts({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Global Grid Size Shortcuts (Q - cycle) - Only work when not editing text
-      if (!isEditingPrompt && !selectedImage && !deleteConfirmation.show) {
+      if (!isEditingPrompt && !selectedImage) {
         const now = Date.now();
 
         // Q: 循环切换布局 small -> medium -> large -> small
@@ -101,22 +95,12 @@ export function useKeyboardShortcuts({
         }
       }
 
+      // Delete 键删除
       if (e.key === 'Delete') {
-        if (deleteConfirmation.show) return;
         if (isSelectionMode && selectedImageIds.size > 0) {
           onBatchDelete();
         } else if (selectedImage) {
           onSingleDelete();
-        }
-        return;
-      }
-
-      if (deleteConfirmation.show) {
-        if (e.key === 'Escape') {
-          setDeleteConfirmation({ show: false, type: null });
-          e.stopPropagation();
-        } else if (e.key === 'Enter') {
-          executeDelete();
         }
         return;
       }
@@ -155,7 +139,6 @@ export function useKeyboardShortcuts({
     selectedImage,
     isFullscreen,
     isEditingPrompt,
-    deleteConfirmation.show,
     isSelectionMode,
     selectedImageIds,
     gridSize,
@@ -163,12 +146,10 @@ export function useKeyboardShortcuts({
     setIsFullscreen,
     setSelectedImage,
     setIsEditingPrompt,
-    setDeleteConfirmation,
     setIsSelectionMode,
     clearSelection,
     onBatchDelete,
     onSingleDelete,
-    executeDelete,
     onTitleClick,
     handleNextImage,
     handlePrevImage,

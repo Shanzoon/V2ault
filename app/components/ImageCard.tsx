@@ -153,7 +153,7 @@ export const ImageCard = memo(function ImageCard({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onDelete?.(img.id, e);
+                    onDelete?.(img.id);
                     setShowMenu(false);
                   }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition-colors"

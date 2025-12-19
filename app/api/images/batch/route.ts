@@ -42,18 +42,21 @@ export async function DELETE(request: NextRequest) {
 
   try {
     const deletedCount = await withDatabase((db) => {
-      // 使用事务批量删除
-      const deleteMany = db.transaction((idsToDelete: number[]) => {
-        const stmt = db.prepare('DELETE FROM images WHERE id = ?');
+      // 软删除：批量设置 deleted_at 时间戳
+      const softDeleteMany = db.transaction((idsToDelete: number[]) => {
+        const stmt = db.prepare(
+          'UPDATE images SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL'
+        );
+        const now = Math.floor(Date.now() / 1000);
         let changes = 0;
         for (const id of idsToDelete) {
-          const result = stmt.run(id);
+          const result = stmt.run(now, id);
           changes += result.changes;
         }
         return changes;
       });
 
-      return deleteMany(ids);
+      return softDeleteMany(ids);
     });
 
     return NextResponse.json({ success: true, deletedCount });

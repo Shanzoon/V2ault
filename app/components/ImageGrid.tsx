@@ -16,7 +16,7 @@ interface ImageGridProps {
   onImageClick: (img: Image) => void;
   onToggleLiked: (id: number) => void;
   onDownload: (id: number, filename: string) => void;
-  onDelete: (id: number, e: React.MouseEvent) => void;
+  onDelete: (id: number) => void;
   isAdmin: boolean;
   loadMoreRef: (node?: Element | null) => void;
   onCardRectsChange?: (rects: Map<number, DOMRect>) => void;

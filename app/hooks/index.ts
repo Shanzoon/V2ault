@@ -9,3 +9,4 @@ export { useStyles } from './useStyles';
 export { useBoxSelection } from './useBoxSelection';
 export { useBatchEdit } from './useBatchEdit';
 export { useClickOutside } from './useClickOutside';
+export { useTrashImages } from './useTrashImages';
