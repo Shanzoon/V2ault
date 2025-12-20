@@ -1,15 +1,8 @@
 // 常量和配置
 export {
-  IMAGE_DB_PATH,
-  DB_PATH,
-  CACHE_DIR,
-  IMAGE_ROOTS,
-  UPLOAD_DIR,
+  DATABASE_URL,
   UPLOAD_MAX_SIZE,
   UPLOAD_MAX_FILES,
-  windowsToWslPath,
-  wslToWindowsPath,
-  normalizePath,
   RESOLUTION_THRESHOLDS,
   DEFAULT_PAGE_SIZE,
   THUMBNAIL_QUALITY,
@@ -17,22 +10,33 @@ export {
 } from './constants';
 
 // 数据库
-export { getDatabase, withDatabase, withDatabaseSync, DatabaseError, checkDatabaseStatus } from './db';
+export {
+  getPool,
+  closePool,
+  query,
+  queryOne,
+  queryAll,
+  withTransaction,
+  checkDatabaseStatus,
+  DatabaseError,
+  // 兼容性导出（已弃用）
+  getDatabase,
+  withDatabase,
+  withDatabaseSync,
+} from './db';
 
 // 错误处理
 export { errorResponse, parseJsonBody, getErrorMessage, ERROR_CODES, type ErrorCode } from './errors';
 
-// 缓存
+// OSS 对象存储
 export {
-  getFileHash,
-  getCachePath,
-  ensureCacheDir,
-  cacheExists,
-  readCache,
-  writeCache,
-  clearImageCache,
-  deleteSourceFile,
-} from './cache';
-
-// 文件工具
-export { findActualFilePath } from './file-utils';
+  getOssClient,
+  uploadToOss,
+  getSignedUrl,
+  getPublicUrl,
+  getProcessedImageUrl,
+  deleteFromOss,
+  batchDeleteFromOss,
+  ossObjectExists,
+  generateOssKey,
+} from './oss';

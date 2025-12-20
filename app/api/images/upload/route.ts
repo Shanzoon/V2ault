@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'node:fs';
-import path from 'node:path';
 import sharp from 'sharp';
 import { encode } from 'blurhash';
 import {
-  withDatabase,
+  query,
   errorResponse,
   getErrorMessage,
-  UPLOAD_DIR,
   UPLOAD_MAX_SIZE,
+  uploadToOss,
+  generateOssKey,
 } from '@/app/lib';
 import { isAdmin } from '@/app/lib/auth';
 
@@ -33,7 +32,8 @@ interface UploadMetadata {
 interface UploadedImage {
   id: number;
   filename: string;
-  filepath: string;
+  oss_key: string;
+  url: string;
   width: number;
   height: number;
   filesize: number;
@@ -44,30 +44,6 @@ interface UploadedImage {
 interface FailedUpload {
   filename: string;
   error: string;
-}
-
-/**
- * 确保上传目录存在
- */
-function ensureUploadDir(): void {
-  if (!fs.existsSync(UPLOAD_DIR)) {
-    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-    console.log('[Upload] Created upload directory:', UPLOAD_DIR);
-  }
-}
-
-/**
- * 生成唯一文件名
- * 格式: {原名}_{时间戳}_{随机串}.webp
- */
-function generateFilename(originalName: string): string {
-  const ext = '.webp';
-  const baseName = path.basename(originalName, path.extname(originalName));
-  // 清理文件名中的特殊字符
-  const cleanName = baseName.replace(/[^\w\u4e00-\u9fa5-]/g, '_').slice(0, 50);
-  const timestamp = Date.now();
-  const randomStr = Math.random().toString(36).substring(2, 8);
-  return `${cleanName}_${timestamp}_${randomStr}${ext}`;
 }
 
 /**
@@ -120,8 +96,6 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    ensureUploadDir();
-
     const formData = await request.formData();
     const files = formData.getAll('files') as File[];
     const metadataStr = formData.get('metadata') as string;
@@ -183,34 +157,33 @@ export async function POST(request: NextRequest) {
         const width = sharpMeta.width || 0;
         const height = sharpMeta.height || 0;
 
-        // 生成唯一文件名并保存
-        const newFilename = generateFilename(originalFilename);
-        const filepath = path.join(UPLOAD_DIR, newFilename);
+        // 生成 OSS 对象键名
+        const ossKey = generateOssKey(originalFilename);
 
-        fs.writeFileSync(filepath, processedImage);
-        console.log(`[Upload] Saved: ${newFilename} (${width}x${height})`);
+        // 上传到阿里云 OSS
+        const ossResult = await uploadToOss(ossKey, processedImage, 'image/webp');
+        console.log(`[Upload] Uploaded to OSS: ${ossKey} (${width}x${height})`);
 
         // 计算 blurhash 和 dominant_color
         const blurhash = await calculateBlurhash(processedImage);
         const dominant_color = await getDominantColor(processedImage);
 
         // 写入数据库
-        const result = await withDatabase((db) => {
-          const stmt = db.prepare(`
-            INSERT INTO images (
-              filename, filepath, prompt, width, height,
-              filesize, imported_at, source, model_base_id, model_base,
-              style, style_ref, blurhash, dominant_color, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `);
+        const displayName = fileMeta.title || originalFilename;
+        const now = Math.floor(Date.now() / 1000);
+        const createdAt = new Date().toISOString().replace('T', ' ').split('.')[0];
 
-          const displayName = fileMeta.title || originalFilename;
-          const now = Math.floor(Date.now() / 1000);
-          const createdAt = new Date().toISOString().replace('T', ' ').split('.')[0];
-
-          const insertResult = stmt.run(
+        const insertResult = await query<{ id: number }>(
+          `INSERT INTO images (
+            filename, filepath, oss_key, prompt, width, height,
+            filesize, imported_at, source, model_base_id, model_base,
+            style, style_ref, blurhash, dominant_color, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+          RETURNING id`,
+          [
             displayName,
-            filepath,
+            ossKey,  // filepath 保存 oss_key 以兼容旧代码
+            ossKey,
             fileMeta.prompt || null,
             width,
             height,
@@ -224,15 +197,16 @@ export async function POST(request: NextRequest) {
             blurhash,
             dominant_color,
             createdAt
-          );
+          ]
+        );
 
-          return insertResult.lastInsertRowid;
-        });
+        const insertedId = insertResult.rows[0]?.id;
 
         uploaded.push({
-          id: Number(result),
+          id: insertedId,
           filename: fileMeta.title || originalFilename,
-          filepath,
+          oss_key: ossKey,
+          url: ossResult.url,
           width,
           height,
           filesize: processedImage.length,
@@ -240,7 +214,7 @@ export async function POST(request: NextRequest) {
           dominant_color,
         });
 
-        console.log(`[Upload] Inserted to DB: id=${result}`);
+        console.log(`[Upload] Inserted to DB: id=${insertedId}`);
       } catch (err) {
         console.error(`[Upload] Failed to process ${originalFilename}:`, err);
         failed.push({

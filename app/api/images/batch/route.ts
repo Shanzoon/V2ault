@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  withDatabase,
+  query,
   errorResponse,
   parseJsonBody,
   getErrorMessage,
@@ -27,7 +27,6 @@ export async function DELETE(request: NextRequest) {
     return errorResponse('Unauthorized', 403);
   }
 
-  // 解析请求体
   const body = await parseJsonBody<BatchDeleteBody>(request);
   if (!body) {
     return errorResponse('Invalid JSON', 400);
@@ -35,40 +34,27 @@ export async function DELETE(request: NextRequest) {
 
   const { ids } = body;
 
-  // 验证参数
   if (!Array.isArray(ids) || ids.length === 0) {
     return errorResponse('IDs must be a non-empty array', 400);
   }
 
   try {
-    const deletedCount = await withDatabase((db) => {
-      // 软删除：批量设置 deleted_at 时间戳
-      const softDeleteMany = db.transaction((idsToDelete: number[]) => {
-        const stmt = db.prepare(
-          'UPDATE images SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL'
-        );
-        const now = Math.floor(Date.now() / 1000);
-        let changes = 0;
-        for (const id of idsToDelete) {
-          const result = stmt.run(now, id);
-          changes += result.changes;
-        }
-        return changes;
-      });
+    // 软删除：批量设置 deleted_at 时间戳
+    const now = Math.floor(Date.now() / 1000);
+    const placeholders = ids.map((_, i) => `$${i + 2}`).join(',');
+    const result = await query(
+      `UPDATE images SET deleted_at = $1 WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
+      [now, ...ids]
+    );
 
-      return softDeleteMany(ids);
-    });
-
-    return NextResponse.json({ success: true, deletedCount });
+    return NextResponse.json({ success: true, deletedCount: result.rowCount });
   } catch (error: unknown) {
     console.error('Error deleting images:', error);
     return errorResponse('Failed to delete images', 500, getErrorMessage(error));
   }
 }
 
-// 批量更新
 export async function PATCH(request: NextRequest) {
-  // 解析请求体
   const body = await parseJsonBody<BatchUpdateBody>(request);
   if (!body) {
     return errorResponse('Invalid JSON', 400);
@@ -76,7 +62,6 @@ export async function PATCH(request: NextRequest) {
 
   const { ids, action, data } = body;
 
-  // 验证参数
   if (!Array.isArray(ids) || ids.length === 0) {
     return errorResponse('IDs must be a non-empty array', 400);
   }
@@ -91,62 +76,46 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const result = await withDatabase((db) => {
-      if (action === 'like') {
-        // 批量点赞：将 like_count 设为 1
-        const stmt = db.prepare('UPDATE images SET like_count = 1 WHERE id = ?');
-        const updateMany = db.transaction((idsToUpdate: number[]) => {
-          let changes = 0;
-          for (const id of idsToUpdate) {
-            const result = stmt.run(id);
-            changes += result.changes;
-          }
-          return changes;
-        });
-        return updateMany(ids);
+    let updatedCount = 0;
+
+    if (action === 'like') {
+      // 批量点赞：将 like_count 设为 1
+      const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+      const result = await query(
+        `UPDATE images SET like_count = 1 WHERE id IN (${placeholders})`,
+        ids
+      );
+      updatedCount = result.rowCount ?? 0;
+    }
+
+    if (action === 'update' && data) {
+      // 构建动态 UPDATE 语句
+      const updates: string[] = [];
+      const values: (string | number | null)[] = [];
+      let paramIndex = 1;
+
+      if (data.model_base !== undefined) {
+        updates.push(`model_base = $${paramIndex++}`);
+        values.push(data.model_base || null);
+      }
+      if (data.source !== undefined) {
+        updates.push(`source = $${paramIndex++}`);
+        values.push(data.source || null);
+      }
+      if (data.style !== undefined) {
+        updates.push(`style = $${paramIndex++}`);
+        values.push(data.style || null);
       }
 
-      if (action === 'update' && data) {
-        // 构建动态 UPDATE 语句
-        const updates: string[] = [];
-        const values: (string | null)[] = [];
-
-        if (data.model_base !== undefined) {
-          updates.push('model_base = ?');
-          values.push(data.model_base || null);
-        }
-        if (data.source !== undefined) {
-          updates.push('source = ?');
-          values.push(data.source || null);
-        }
-        if (data.style !== undefined) {
-          updates.push('style = ?');
-          values.push(data.style || null);
-        }
-
-        if (updates.length === 0) {
-          return 0;
-        }
-
-        const sql = `UPDATE images SET ${updates.join(', ')} WHERE id = ?`;
-        const stmt = db.prepare(sql);
-
-        const updateMany = db.transaction((idsToUpdate: number[]) => {
-          let changes = 0;
-          for (const id of idsToUpdate) {
-            const result = stmt.run(...values, id);
-            changes += result.changes;
-          }
-          return changes;
-        });
-
-        return updateMany(ids);
+      if (updates.length > 0) {
+        const placeholders = ids.map((_, i) => `$${paramIndex + i}`).join(',');
+        const sql = `UPDATE images SET ${updates.join(', ')} WHERE id IN (${placeholders})`;
+        const result = await query(sql, [...values, ...ids]);
+        updatedCount = result.rowCount ?? 0;
       }
+    }
 
-      return 0;
-    });
-
-    return NextResponse.json({ success: true, updatedCount: result });
+    return NextResponse.json({ success: true, updatedCount });
   } catch (error: unknown) {
     console.error('Error batch updating images:', error);
     return errorResponse('Failed to batch update images', 500, getErrorMessage(error));

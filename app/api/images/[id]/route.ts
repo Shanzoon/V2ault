@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  withDatabase,
+  query,
   errorResponse,
   parseJsonBody,
   getErrorMessage,
 } from '@/app/lib';
 import { isAdmin } from '@/app/lib/auth';
-
-interface UpdatePromptBody {
-  prompt: string;
-}
 
 interface UpdateImageBody {
   prompt?: string;
@@ -31,19 +27,14 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    const result = await withDatabase((db) => {
-      // 软删除：设置 deleted_at 时间戳
-      const softDelete = db.transaction(() => {
-        const updateResult = db.prepare(
-          'UPDATE images SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL'
-        ).run(Math.floor(Date.now() / 1000), id);
-        return updateResult.changes > 0;
-      });
+    // 软删除：设置 deleted_at 时间戳
+    const now = Math.floor(Date.now() / 1000);
+    const result = await query(
+      'UPDATE images SET deleted_at = $1 WHERE id = $2 AND deleted_at IS NULL',
+      [now, id]
+    );
 
-      return softDelete();
-    });
-
-    if (!result) {
+    if (result.rowCount === 0) {
       return errorResponse('Image not found', 404);
     }
 
@@ -60,7 +51,6 @@ export async function PATCH(
 ) {
   const { id } = await params;
 
-  // 解析请求体
   const body = await parseJsonBody<UpdateImageBody>(request);
   if (!body) {
     return errorResponse('Invalid JSON', 400);
@@ -68,15 +58,16 @@ export async function PATCH(
 
   const { prompt, model_base, source, style, style_ref } = body;
 
-  // 检查是否有需要更新的字段
+  // 构建更新语句
   const updates: string[] = [];
-  const values: (string | null)[] = [];
+  const values: (string | number | null)[] = [];
+  let paramIndex = 1;
 
   if (prompt !== undefined) {
     if (typeof prompt !== 'string') {
       return errorResponse('Prompt must be a string', 400);
     }
-    updates.push('prompt = ?');
+    updates.push(`prompt = $${paramIndex++}`);
     values.push(prompt);
   }
 
@@ -90,19 +81,19 @@ export async function PATCH(
     }
 
     if (model_base !== undefined) {
-      updates.push('model_base = ?');
+      updates.push(`model_base = $${paramIndex++}`);
       values.push(model_base || null);
     }
     if (source !== undefined) {
-      updates.push('source = ?');
+      updates.push(`source = $${paramIndex++}`);
       values.push(source || null);
     }
     if (style !== undefined) {
-      updates.push('style = ?');
+      updates.push(`style = $${paramIndex++}`);
       values.push(style || null);
     }
     if (style_ref !== undefined) {
-      updates.push('style_ref = ?');
+      updates.push(`style_ref = $${paramIndex++}`);
       values.push(style_ref || null);
     }
   }
@@ -112,14 +103,12 @@ export async function PATCH(
   }
 
   try {
-    const result = await withDatabase((db) => {
-      const sql = `UPDATE images SET ${updates.join(', ')} WHERE id = ?`;
-      const updateStmt = db.prepare(sql);
-      const updateResult = updateStmt.run(...values, id);
-      return updateResult.changes > 0;
-    });
+    const sql = `UPDATE images SET ${updates.join(', ')} WHERE id = $${paramIndex}`;
+    values.push(parseInt(id));
 
-    if (!result) {
+    const result = await query(sql, values);
+
+    if (result.rowCount === 0) {
       return errorResponse('Image not found', 404);
     }
 

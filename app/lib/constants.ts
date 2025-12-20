@@ -1,12 +1,8 @@
-// 从 config.ts 导入路径配置
-export { IMAGE_DB_PATH, CACHE_DIR, IMAGE_ROOTS, UPLOAD_DIR, UPLOAD_MAX_SIZE, UPLOAD_MAX_FILES } from './config';
-export { windowsToWslPath, wslToWindowsPath, normalizePath } from './config';
-
-// 兼容旧代码：DB_PATH 作为 IMAGE_DB_PATH 的别名
-export { IMAGE_DB_PATH as DB_PATH } from './config';
+// 从 config.ts 导入配置
+export { DATABASE_URL, UPLOAD_MAX_SIZE, UPLOAD_MAX_FILES } from './config';
 
 // ============================================
-// 非路径相关的常量（保持不变）
+// 非路径相关的常量
 // ============================================
 
 // 分辨率阈值（像素面积）

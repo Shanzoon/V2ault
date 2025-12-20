@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  withDatabase,
+  query,
+  queryAll,
   errorResponse,
   parseJsonBody,
   getErrorMessage,
-  clearImageCache,
-  deleteSourceFile,
-  findActualFilePath,
+  batchDeleteFromOss,
 } from '@/app/lib';
 import { isAdmin } from '@/app/lib/auth';
 
@@ -18,7 +17,6 @@ interface BatchBody {
  * PATCH - 批量恢复图片
  */
 export async function PATCH(request: NextRequest) {
-  // 权限检查
   if (!(await isAdmin())) {
     return errorResponse('Unauthorized', 403);
   }
@@ -29,22 +27,13 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const restoredCount = await withDatabase((db) => {
-      const stmt = db.prepare(
-        'UPDATE images SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL'
-      );
-      const restoreMany = db.transaction((ids: number[]) => {
-        let changes = 0;
-        for (const id of ids) {
-          const result = stmt.run(id);
-          changes += result.changes;
-        }
-        return changes;
-      });
-      return restoreMany(body.ids);
-    });
+    const placeholders = body.ids.map((_, i) => `$${i + 1}`).join(',');
+    const result = await query(
+      `UPDATE images SET deleted_at = NULL WHERE id IN (${placeholders}) AND deleted_at IS NOT NULL`,
+      body.ids
+    );
 
-    return NextResponse.json({ success: true, restoredCount });
+    return NextResponse.json({ success: true, restoredCount: result.rowCount });
   } catch (error: unknown) {
     console.error('Error batch restoring images:', error);
     return errorResponse('Failed to batch restore images', 500, getErrorMessage(error));
@@ -55,7 +44,6 @@ export async function PATCH(request: NextRequest) {
  * DELETE - 批量永久删除图片
  */
 export async function DELETE(request: NextRequest) {
-  // 权限检查
   if (!(await isAdmin())) {
     return errorResponse('Unauthorized', 403);
   }
@@ -66,43 +54,34 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    const result = await withDatabase((db) => {
-      // 1. 获取文件路径
-      const placeholders = body.ids.map(() => '?').join(',');
-      const rows = db.prepare(
-        `SELECT id, filepath FROM images WHERE id IN (${placeholders}) AND deleted_at IS NOT NULL`
-      ).all(...body.ids) as { id: number; filepath: string }[];
+    // 1. 获取 OSS keys
+    const placeholders = body.ids.map((_, i) => `$${i + 1}`).join(',');
+    const rows = await queryAll<{ id: number; oss_key: string | null; filepath: string }>(
+      `SELECT id, oss_key, filepath FROM images WHERE id IN (${placeholders}) AND deleted_at IS NOT NULL`,
+      body.ids
+    );
 
-      // 2. 删除数据库记录
-      const deleteMany = db.transaction((ids: number[]) => {
-        const stmt = db.prepare(
-          'DELETE FROM images WHERE id = ? AND deleted_at IS NOT NULL'
-        );
-        let changes = 0;
-        for (const id of ids) {
-          const result = stmt.run(id);
-          changes += result.changes;
-        }
-        return changes;
-      });
+    // 2. 删除数据库记录
+    const deleteResult = await query(
+      `DELETE FROM images WHERE id IN (${placeholders}) AND deleted_at IS NOT NULL`,
+      body.ids
+    );
 
-      return { deletedCount: deleteMany(body.ids), files: rows };
-    });
+    // 3. 批量删除 OSS 文件
+    const ossKeys = rows
+      .map((r) => r.oss_key || r.filepath)
+      .filter((key): key is string => !!key);
 
-    // 3. 删除物理文件和缓存
-    for (const row of result.files) {
+    if (ossKeys.length > 0) {
       try {
-        const finalPath = findActualFilePath(row.filepath);
-        if (finalPath) {
-          deleteSourceFile(finalPath);
-        }
-        clearImageCache(row.filepath);
+        await batchDeleteFromOss(ossKeys);
+        console.log(`[Trash] Batch deleted ${ossKeys.length} files from OSS`);
       } catch (e) {
-        console.error(`Failed to delete file for id ${row.id}:`, e);
+        console.error('[Trash] Failed to batch delete from OSS:', e);
       }
     }
 
-    return NextResponse.json({ success: true, deletedCount: result.deletedCount });
+    return NextResponse.json({ success: true, deletedCount: deleteResult.rowCount });
   } catch (error: unknown) {
     console.error('Error batch permanently deleting images:', error);
     return errorResponse('Failed to batch permanently delete images', 500, getErrorMessage(error));

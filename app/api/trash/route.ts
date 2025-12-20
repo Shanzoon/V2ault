@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  withDatabase,
+  query,
+  queryOne,
+  queryAll,
   errorResponse,
   getErrorMessage,
-  clearImageCache,
-  deleteSourceFile,
-  findActualFilePath,
+  batchDeleteFromOss,
   DEFAULT_PAGE_SIZE,
 } from '@/app/lib';
 import { isAdmin } from '@/app/lib/auth';
@@ -17,7 +17,6 @@ export const dynamic = 'force-dynamic';
  * GET - 获取回收站列表
  */
 export async function GET(request: NextRequest) {
-  // 权限检查
   if (!(await isAdmin())) {
     return errorResponse('Unauthorized', 403);
   }
@@ -28,28 +27,23 @@ export async function GET(request: NextRequest) {
   const offset = (page - 1) * limit;
 
   try {
-    const result = await withDatabase((db) => {
-      // 获取总数
-      const countResult = db.prepare(
-        'SELECT count(*) as total FROM images WHERE deleted_at IS NOT NULL'
-      ).get() as { total: number };
+    // 获取总数
+    const countResult = await queryOne<{ total: string }>(
+      'SELECT count(*) as total FROM images WHERE deleted_at IS NOT NULL'
+    );
+    const total = parseInt(countResult?.total || '0');
 
-      // 获取列表，按删除时间倒序
-      const images = db.prepare(`
-        SELECT * FROM images
-        WHERE deleted_at IS NOT NULL
-        ORDER BY deleted_at DESC
-        LIMIT ? OFFSET ?
-      `).all(limit, offset);
-
-      return { images, total: countResult.total };
-    }, true); // readonly
+    // 获取列表，按删除时间倒序
+    const images = await queryAll(
+      `SELECT * FROM images WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
 
     return NextResponse.json({
-      images: result.images,
-      total: result.total,
+      images,
+      total,
       page,
-      totalPages: Math.ceil(result.total / limit),
+      totalPages: Math.ceil(total / limit),
     });
   } catch (error: unknown) {
     console.error('Error fetching trash:', error);
@@ -61,40 +55,34 @@ export async function GET(request: NextRequest) {
  * DELETE - 清空回收站（永久删除所有已软删除的图片）
  */
 export async function DELETE() {
-  // 权限检查
   if (!(await isAdmin())) {
     return errorResponse('Unauthorized', 403);
   }
 
   try {
-    const result = await withDatabase((db) => {
-      // 1. 获取所有待删除的文件路径
-      const rows = db.prepare(
-        'SELECT id, filepath FROM images WHERE deleted_at IS NOT NULL'
-      ).all() as { id: number; filepath: string }[];
+    // 1. 获取所有待删除的 OSS keys
+    const rows = await queryAll<{ id: number; oss_key: string | null; filepath: string }>(
+      'SELECT id, oss_key, filepath FROM images WHERE deleted_at IS NOT NULL'
+    );
 
-      // 2. 删除数据库记录
-      const deleteResult = db.prepare(
-        'DELETE FROM images WHERE deleted_at IS NOT NULL'
-      ).run();
+    // 2. 删除数据库记录
+    const deleteResult = await query('DELETE FROM images WHERE deleted_at IS NOT NULL');
 
-      return { deletedCount: deleteResult.changes, files: rows };
-    });
+    // 3. 批量删除 OSS 文件
+    const ossKeys = rows
+      .map((r) => r.oss_key || r.filepath)
+      .filter((key): key is string => !!key);
 
-    // 3. 删除物理文件和缓存（在事务外执行）
-    for (const row of result.files) {
+    if (ossKeys.length > 0) {
       try {
-        const finalPath = findActualFilePath(row.filepath);
-        if (finalPath) {
-          deleteSourceFile(finalPath);
-        }
-        clearImageCache(row.filepath);
+        await batchDeleteFromOss(ossKeys);
+        console.log(`[Trash] Emptied trash: deleted ${ossKeys.length} files from OSS`);
       } catch (e) {
-        console.error(`Failed to delete file for id ${row.id}:`, e);
+        console.error('[Trash] Failed to delete files from OSS:', e);
       }
     }
 
-    return NextResponse.json({ success: true, deletedCount: result.deletedCount });
+    return NextResponse.json({ success: true, deletedCount: deleteResult.rowCount });
   } catch (error: unknown) {
     console.error('Error emptying trash:', error);
     return errorResponse('Failed to empty trash', 500, getErrorMessage(error));
