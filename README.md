@@ -30,7 +30,8 @@
   - 字段联动（风格大类变更自动清空不匹配的具体风格）
   - 必填字段未填时缩略图红点提示
   - 大量图片加载进度条
-- 单张/批量删除（支持 3 秒内撤销）
+- 单张/批量删除（移入回收站）
+- 回收站管理（恢复/永久删除）
 - 全局编辑图片元数据（模型基底、风格大类、具体风格、风格参考、Prompt）
 - 点赞收藏功能
 - 批量下载（ZIP 打包）
@@ -41,7 +42,7 @@
 - **批量操作**：
   - 批量下载（ZIP 打包）
   - 批量点赞
-  - 批量删除（支持撤销）
+  - 批量删除（移入回收站）
   - 批量修改模型基底
   - 批量修改风格分类
 - **选中限制**：最多同时选中 200 张图片
@@ -84,7 +85,8 @@
 
 - **前端**: Next.js 16, React 19, TypeScript, Tailwind CSS 4
 - **动画**: Framer Motion
-- **数据库**: SQLite (better-sqlite3)
+- **数据库**: PostgreSQL
+- **云存储**: 阿里云 OSS
 - **图片处理**: Sharp, BlurHash
 - **UI 组件**: Lucide Icons, Swiper, Sonner
 
@@ -113,17 +115,15 @@ cp .env.local.example .env.local
 编辑 `.env.local` 文件：
 
 ```bash
-# 数据库路径
-IMAGE_DB_PATH=./images.db
+# PostgreSQL 数据库连接字符串
+DATABASE_URL=postgresql://user:password@host:5432/v2ault
 
-# 缩略图缓存目录
-CACHE_DIR=../V2ault_cache
-
-# 图片根目录（多个用分号分隔）
-IMAGE_ROOTS=/path/to/images;/another/path
-
-# 上传目录
-UPLOAD_DIR=../V2ault_uploads
+# 阿里云 OSS 配置
+OSS_REGION=oss-cn-hangzhou
+OSS_BUCKET=your-bucket-name
+OSS_ACCESS_KEY_ID=your-access-key-id
+OSS_ACCESS_KEY_SECRET=your-access-key-secret
+# OSS_ENDPOINT=  # 可选，自定义 endpoint
 
 # 上传大小限制（字节，默认 20MB）
 UPLOAD_MAX_SIZE=20971520
@@ -135,14 +135,8 @@ ADMIN_PASSWORD=your_secure_password
 ### 初始化数据库
 
 ```bash
-# 初始化数据库表结构
+# 初始化 PostgreSQL 数据库表结构
 pnpm db:init
-
-# 扫描图片目录（快速模式）
-pnpm db:scan
-
-# 扫描图片目录（完整模式，包含 BlurHash 计算）
-pnpm db:scan:full
 ```
 
 ### 启动开发服务器
@@ -168,12 +162,17 @@ V2ault/
 │   ├── api/              # API 路由
 │   │   ├── auth/         # 认证 API
 │   │   ├── image/        # 图片服务
-│   │   └── images/       # 图片列表/上传/删除
+│   │   ├── images/       # 图片列表/上传/删除
+│   │   ├── styles/       # 风格列表 API
+│   │   └── trash/        # 回收站 API
 │   ├── components/       # React 组件
+│   │   └── upload/       # 上传模块子组件
 │   ├── hooks/            # 自定义 Hooks
 │   ├── lib/              # 工具函数
+│   │   └── __tests__/    # 单元测试
 │   ├── types/            # TypeScript 类型定义
-│   └── page.tsx          # 主页面
+│   ├── page.tsx          # 主页面
+│   └── trash/            # 回收站页面
 ├── scripts/              # 数据库脚本
 │   ├── init-db.ts        # 初始化数据库
 │   └── scan-images.ts    # 扫描图片
@@ -209,10 +208,40 @@ pnpm dev          # 启动开发服务器
 pnpm build        # 生产构建
 pnpm start        # 启动生产服务器
 pnpm lint         # 代码检查
+pnpm test         # 运行测试
 pnpm db:init      # 初始化数据库
-pnpm db:scan      # 扫描图片（快速）
-pnpm db:scan:full # 扫描图片（完整）
 ```
+
+## 更新日志
+
+### 2024-12-22
+
+#### 新功能
+- **回收站系统**：删除的图片先移入回收站，支持恢复或永久删除
+- **上传失败详情**：上传状态栏显示失败文件名和具体原因
+
+#### 优化
+- **图片缓存策略**：修复本地与 Vercel 图片显示不一致问题（OSS 签名 URL 缓存时间从 1 年调整为 30 分钟）
+- **上传刷新逻辑**：修复上传完成后图片列表不自动刷新的问题
+- **文件类型限制**：前端限制只允许上传图片（JPG/PNG/WebP/BMP/TIFF），不支持 GIF
+
+#### 重构
+- **UploadModal 组件拆分**：将 1266 行的单体组件拆分为 7 个独立模块
+  - `useUploadModal.ts` - 状态管理和业务逻辑（653 行）
+  - `UploadDropZone.tsx` - 拖拽选择区（77 行）
+  - `ThumbnailGrid.tsx` - 缩略图网格（180 行）
+  - `MetadataEditor.tsx` - 元数据编辑表单（223 行）
+  - `UploadEditView.tsx` - 编辑界面容器（266 行）
+  - `CloseConfirmDialog.tsx` - 关闭确认弹窗（72 行）
+  - `UploadModal.tsx` - 主组件（239 行）
+
+#### 安全
+- 修复 Token 验证时序攻击漏洞（使用 timingSafeEqual）
+- 修复密码验证时序攻击漏洞
+
+#### 测试
+- 新增 47 个单元测试（认证模块 27 个，数据库模块 20 个）
+- 测试覆盖率达到核心模块 100%
 
 ## 许可证
 

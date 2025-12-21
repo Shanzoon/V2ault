@@ -71,7 +71,8 @@
 ### 4.1 技术栈
 *   **Framework**: Next.js 16 (App Router)
 *   **Language**: TypeScript
-*   **Database**: SQLite (via `better-sqlite3`) - Read-only mode
+*   **Database**: PostgreSQL
+*   **Cloud Storage**: Alibaba Cloud OSS
 *   **Styling**: Tailwind CSS v4
 *   **Icons**: Lucide React
 *   **Image Optimization**: Sharp (Server-side resizing)

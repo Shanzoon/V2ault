@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 
 // Cookie 名称
 const AUTH_COOKIE_NAME = 'v2ault_auth';
@@ -14,41 +14,69 @@ export function getAdminPassword(): string | undefined {
 }
 
 /**
+ * 计算 token 签名
+ * @param timestamp 时间戳
+ * @param nonce 随机数
+ * @param secret 密钥
+ */
+function computeTokenSignature(timestamp: string, nonce: string, secret: string): string {
+  return createHash('sha256')
+    .update(`${timestamp}:${nonce}:${secret}`)
+    .digest('hex');
+}
+
+/**
  * 生成认证 token
+ * 格式: timestamp:nonce:signature
  */
 export function generateAuthToken(): string {
   const timestamp = Date.now().toString();
-  const random = randomBytes(16).toString('hex');
+  const nonce = randomBytes(16).toString('hex');
   const secret = getAdminPassword() || 'default_secret';
-  const hash = createHash('sha256')
-    .update(`${timestamp}:${random}:${secret}`)
-    .digest('hex');
-  return `${timestamp}:${hash}`;
+  const signature = computeTokenSignature(timestamp, nonce, secret);
+  return `${timestamp}:${nonce}:${signature}`;
 }
 
 /**
  * 验证认证 token
+ * 使用时间常量比较防止定时攻击
  */
 export function verifyAuthToken(token: string): boolean {
   if (!token) return false;
 
   const parts = token.split(':');
-  if (parts.length !== 2) return false;
+  if (parts.length !== 3) return false;
 
-  const [timestamp, hash] = parts;
-  const tokenAge = Date.now() - parseInt(timestamp, 10);
+  const [timestamp, nonce, receivedSignature] = parts;
+
+  // 验证格式
+  if (!timestamp || !nonce || !receivedSignature) return false;
+  if (receivedSignature.length !== 64) return false;
 
   // Token 过期检查（7天）
-  if (tokenAge > AUTH_COOKIE_MAX_AGE * 1000) {
+  const tokenAge = Date.now() - parseInt(timestamp, 10);
+  if (isNaN(tokenAge) || tokenAge > AUTH_COOKIE_MAX_AGE * 1000 || tokenAge < 0) {
     return false;
   }
 
-  // 简单验证：检查 hash 长度是否正确
-  return hash.length === 64;
+  // 重新计算签名并进行时间常量比较
+  const secret = getAdminPassword() || 'default_secret';
+  const expectedSignature = computeTokenSignature(timestamp, nonce, secret);
+
+  try {
+    return timingSafeEqual(
+      Buffer.from(receivedSignature, 'hex'),
+      Buffer.from(expectedSignature, 'hex')
+    );
+  } catch {
+    // Buffer 转换失败（非法 hex 字符串）
+    return false;
+  }
 }
 
 /**
  * 验证密码是否正确
+ * 使用时间常量比较防止定时攻击
  */
 export function verifyPassword(password: string): boolean {
   const adminPassword = getAdminPassword();
@@ -56,7 +84,25 @@ export function verifyPassword(password: string): boolean {
     // 如果没有设置密码，任何密码都不正确
     return false;
   }
-  return password === adminPassword;
+
+  // 长度不同时也要执行比较，防止泄露长度信息
+  // 但最终结果要考虑长度是否相同
+  const passwordBuf = Buffer.from(password);
+  const adminBuf = Buffer.from(adminPassword);
+
+  // 使用较长的长度来分配 buffer，确保两者长度相同
+  const maxLen = Math.max(passwordBuf.length, adminBuf.length);
+  const paddedPassword = Buffer.alloc(maxLen, 0);
+  const paddedAdmin = Buffer.alloc(maxLen, 0);
+
+  passwordBuf.copy(paddedPassword);
+  adminBuf.copy(paddedAdmin);
+
+  // 时间常量比较 + 长度检查
+  const contentsEqual = timingSafeEqual(paddedPassword, paddedAdmin);
+  const lengthsEqual = passwordBuf.length === adminBuf.length;
+
+  return contentsEqual && lengthsEqual;
 }
 
 /**

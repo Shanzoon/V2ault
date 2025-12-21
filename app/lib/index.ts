@@ -19,10 +19,6 @@ export {
   withTransaction,
   checkDatabaseStatus,
   DatabaseError,
-  // 兼容性导出（已弃用）
-  getDatabase,
-  withDatabase,
-  withDatabaseSync,
 } from './db';
 
 // 错误处理

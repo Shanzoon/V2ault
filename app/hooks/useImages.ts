@@ -37,6 +37,9 @@ export function useImages(options: UseImagesOptions = {}) {
   const [selectedResolutions, setSelectedResolutions] = useState<string[]>([]);
   const [likedOnly, setLikedOnly] = useState(false);
 
+  // 刷新触发器（用于强制重新加载）
+  const [refreshKey, setRefreshKey] = useState(0);
+
   // 新增筛选状态
   const [selectedModelBases, setSelectedModelBases] = useState<string[]>([]);
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
@@ -143,7 +146,7 @@ export function useImages(options: UseImagesOptions = {}) {
         setIsLoading(false);
       }
     }
-  }, [page, debouncedSearch, sortMode, selectedResolutions, randomSeed, hasMore, limit, likedOnly, selectedModelBases, selectedStyles]);
+  }, [page, debouncedSearch, sortMode, selectedResolutions, randomSeed, hasMore, limit, likedOnly, selectedModelBases, selectedStyles, refreshKey]);
 
   // Trigger fetch
   useEffect(() => {
@@ -265,12 +268,16 @@ export function useImages(options: UseImagesOptions = {}) {
 
   // Refetch from the beginning (used after upload)
   const refetch = useCallback(() => {
-    resetGallery();
-    // Trigger a new random seed if in random mode to show new content
+    // 重置分页和加载状态，但不立即清空图片（保持旧数据显示直到新数据到达）
+    setPage(1);
+    setHasMore(true);
+    // 通过 refreshKey 强制触发重新加载
+    setRefreshKey(k => k + 1);
+    // 随机模式下生成新种子以获取不同内容
     if (sortMode.startsWith('random')) {
       setRandomSeed(Math.floor(Math.random() * 1000000));
     }
-  }, [resetGallery, sortMode]);
+  }, [sortMode]);
 
   return {
     // Data

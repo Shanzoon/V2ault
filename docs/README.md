@@ -1,8 +1,8 @@
 # Local AI Gallery
 
-![Next.js](https://img.shields.io/badge/Next.js-16.0-black) ![React](https://img.shields.io/badge/React-19.0-blue) ![Tailwind](https://img.shields.io/badge/Tailwind-v4-cyan) ![SQLite](https://img.shields.io/badge/SQLite-Better--Sqlite3-green)
+![Next.js](https://img.shields.io/badge/Next.js-16.0-black) ![React](https://img.shields.io/badge/React-19.0-blue) ![Tailwind](https://img.shields.io/badge/Tailwind-v4-cyan) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)
 
-A high-performance, immersive gallery application designed for browsing and managing locally generated AI images (Stable Diffusion, Midjourney, etc.). Built with Next.js App Router and SQLite.
+A high-performance, immersive gallery application designed for browsing and managing AI images. Built with Next.js App Router, PostgreSQL and Alibaba Cloud OSS.
 
 ## ✨ Features
 
@@ -23,7 +23,8 @@ A high-performance, immersive gallery application designed for browsing and mana
   - **Smooth Animations**: Elegant fade-in effects for images and UI transitions.
 
 - **⚡ Optimized Backend**
-  - Read-only SQLite integration for fast metadata retrieval.
+  - PostgreSQL for reliable metadata storage.
+  - Alibaba Cloud OSS for image storage.
   - Server-side image resizing on-the-fly using `sharp`.
 
 ## 🛠️ Tech Stack
@@ -31,56 +32,67 @@ A high-performance, immersive gallery application designed for browsing and mana
 - **Framework**: Next.js 16 (App Router)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS v4
-- **Database**: SQLite (`better-sqlite3`)
+- **Database**: PostgreSQL
+- **Cloud Storage**: Alibaba Cloud OSS
 - **Icons**: `lucide-react`
 - **Utils**: `use-debounce`, `react-intersection-observer`
 
 ## 📂 Directory Structure
 
 ```
-my-image-gallery/
+V2ault/
 ├── app/
 │   ├── api/
+│   │   ├── auth/         # Authentication API
 │   │   ├── image/        # Image streaming & resizing API
-│   │   └── images/list/  # Metadata listing API (Search/Sort/Filter)
+│   │   └── images/       # Metadata listing API (Search/Sort/Filter)
+│   ├── components/       # React components
+│   ├── hooks/            # Custom hooks
+│   ├── lib/              # Utilities and database
 │   ├── globals.css       # Tailwind directives
 │   ├── layout.tsx        # Root layout
-│   └── page.tsx          # Main Gallery UI (Masonry, Modal, Logic)
+│   └── page.tsx          # Main Gallery UI
 ├── docs/                 # Documentation (PRD, etc.)
-├── public/               # Static assets
-└── images.db             # SQLite database file (placed in project root or parent)
+├── scripts/              # Database scripts
+└── public/               # Static assets
 ```
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 - Node.js 18+
-- An `images.db` SQLite database containing your image metadata.
-- Local images accessible by the application.
+- PostgreSQL database
+- Alibaba Cloud OSS bucket
 
 ### Installation
 
 1.  **Clone the repository:**
     ```bash
     git clone <repository-url>
-    cd my-image-gallery
+    cd V2ault
     ```
 
 2.  **Install dependencies:**
     ```bash
-    npm install
+    pnpm install
     ```
 
-3.  **Database Setup:**
-    Ensure your `images.db` is correctly placed.
-    *   By default, the API looks for `images.db` in the parent directory (`../images.db`) or current root (`./images.db`) depending on configuration in `app/api/images/list/route.ts`.
+3.  **Environment Setup:**
+    Copy `.env.local.example` to `.env.local` and configure:
+    - `DATABASE_URL`: PostgreSQL connection string
+    - `OSS_*`: Alibaba Cloud OSS credentials
 
-4.  **Run Development Server:**
+4.  **Initialize Database:**
     ```bash
-    npm run dev
+    pnpm db:init
     ```
 
-5.  **Open Browser:**
+5.  **Run Development Server:**
+    ```bash
+    pnpm dev
+    ```
+
+6.  **Open Browser:**
     Navigate to `http://localhost:3000` to view your gallery.
 
 ## 🎮 Controls

@@ -4,7 +4,6 @@ import {
   errorResponse,
   getProcessedImageUrl,
   getSignedUrl,
-  CACHE_MAX_AGE,
 } from '@/app/lib';
 
 /**
@@ -60,10 +59,11 @@ export async function GET(
     }
 
     // 返回 302 重定向到 OSS URL
+    // 注意: 签名 URL 有效期为 1 小时，因此缓存时间设为 30 分钟
     return NextResponse.redirect(imageUrl, {
       status: 302,
       headers: {
-        'Cache-Control': `public, max-age=${CACHE_MAX_AGE}, immutable`,
+        'Cache-Control': 'public, max-age=1800',
       },
     });
   } catch (e) {

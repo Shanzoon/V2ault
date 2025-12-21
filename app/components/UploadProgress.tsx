@@ -1,7 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Minus, ChevronUp, Upload, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Minus, ChevronUp, ChevronDown, Upload, Check, AlertCircle, Loader2 } from 'lucide-react';
 import type { UploadQueueState } from '../hooks/useUploadQueue';
 
 interface UploadProgressProps {
@@ -22,6 +23,7 @@ export function UploadProgress({
   onClear,
 }: UploadProgressProps) {
   const { tasks, isUploading, totalCount, completedCount, failedCount } = state;
+  const [showFailedDetails, setShowFailedDetails] = useState(false);
 
   // 计算进度百分比
   const progressPercent =
@@ -30,6 +32,9 @@ export function UploadProgress({
   // 获取当前上传的文件名
   const currentTask = tasks.find((t) => t.status === 'uploading');
   const currentFileName = currentTask?.metadata.title || currentTask?.file.name || '';
+
+  // 获取失败的任务列表
+  const failedTasks = tasks.filter((t) => t.status === 'error');
 
   // 是否全部完成
   const isComplete = !isUploading && totalCount > 0 && completedCount + failedCount === totalCount;
@@ -151,12 +156,52 @@ export function UploadProgress({
                 <span className="text-gray-400">成功: {completedCount}</span>
               </div>
               {failedCount > 0 && (
-                <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setShowFailedDetails(!showFailedDetails)}
+                  className="flex items-center gap-1 hover:text-red-300 transition-colors"
+                >
                   <AlertCircle className="w-3 h-3 text-red-400" />
                   <span className="text-gray-400">失败: {failedCount}</span>
-                </div>
+                  {showFailedDetails ? (
+                    <ChevronUp className="w-3 h-3 text-gray-500" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3 text-gray-500" />
+                  )}
+                </button>
               )}
             </div>
+
+            {/* 失败详情列表 */}
+            <AnimatePresence>
+              {showFailedDetails && failedTasks.length > 0 && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
+                >
+                  <div className="px-4 pb-3 max-h-[120px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10">
+                    {failedTasks.map((task) => (
+                      <div
+                        key={task.id}
+                        className="flex items-start gap-2 py-1.5 border-t border-white/5 first:border-t-0"
+                      >
+                        <AlertCircle className="w-3 h-3 text-red-400 mt-0.5 flex-shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs text-gray-300 truncate" title={task.metadata.title || task.file.name}>
+                            {task.metadata.title || task.file.name}
+                          </p>
+                          <p className="text-[10px] text-red-400/80 truncate" title={task.error}>
+                            {task.error || '上传失败'}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* 操作按钮 */}
             <div className="px-4 pb-4 flex gap-2">
