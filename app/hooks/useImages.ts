@@ -15,6 +15,14 @@ export interface ApiError {
 // 风格聚合类型
 export type AvailableStyles = Record<StyleSource, string[]>;
 
+// SWR 风格的内存缓存
+interface CacheEntry {
+  data: ApiResponse;
+  timestamp: number;
+}
+const imageCache = new Map<string, CacheEntry>();
+const CACHE_TTL = 30000; // 30秒缓存有效期
+
 interface UseImagesOptions {
   limit?: number;
 }
@@ -33,7 +41,6 @@ export function useImages(options: UseImagesOptions = {}) {
   const [debouncedSearch] = useDebounce(search, 500);
 
   const [sortMode, setSortMode] = useState<SortMode>('random_shuffle');
-  const [randomSeed, setRandomSeed] = useState<number | null>(null);
   const [selectedResolutions, setSelectedResolutions] = useState<string[]>([]);
   const [likedOnly, setLikedOnly] = useState(false);
 
@@ -52,11 +59,6 @@ export function useImages(options: UseImagesOptions = {}) {
     rootMargin: '200px',
   });
 
-  // Client-side seed initialization
-  useEffect(() => {
-    setRandomSeed(Math.floor(Math.random() * 1000000));
-  }, []);
-
   // Reset logic
   const resetGallery = useCallback(() => {
     setImages([]);
@@ -67,11 +69,10 @@ export function useImages(options: UseImagesOptions = {}) {
   // Listen for filter changes
   useEffect(() => {
     resetGallery();
-  }, [debouncedSearch, selectedResolutions, sortMode, randomSeed, likedOnly, selectedModelBases, selectedStyles, resetGallery]);
+  }, [debouncedSearch, selectedResolutions, sortMode, likedOnly, selectedModelBases, selectedStyles, resetGallery]);
 
-  // Fetch Logic
+  // Fetch Logic with SWR-style caching
   const fetchImages = useCallback(async () => {
-    if (sortMode.startsWith('random') && randomSeed === null) return;
     if (!hasMore && page > 1) return;
 
     if (abortControllerRef.current) {
@@ -80,21 +81,34 @@ export function useImages(options: UseImagesOptions = {}) {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    setIsLoading(true);
     // 只在首页加载时清除错误（允许重试）
     if (page === 1) {
       setError(null);
     }
 
+    const resolutionsParam = selectedResolutions.length > 0 ? `&resolutions=${selectedResolutions.join(',')}` : '';
+    const likedParam = likedOnly ? '&liked=true' : '';
+    const modelBasesParam = selectedModelBases.length > 0 ? `&modelBases=${selectedModelBases.join(',')}` : '';
+    const stylesParam = selectedStyles.length > 0 ? `&styles=${selectedStyles.join(',')}` : '';
+    const url = `/api/images/list?page=${page}&limit=${limit}&search=${encodeURIComponent(debouncedSearch)}&sort=${sortMode}${resolutionsParam}${likedParam}${modelBasesParam}${stylesParam}`;
+
+    // SWR: 先返回缓存数据（stale）
+    const cacheKey = url;
+    const cached = imageCache.get(cacheKey);
+    if (cached && page === 1) {
+      // 立即显示缓存数据
+      setTotalAssets(cached.data.total);
+      setImages(cached.data.images);
+      // 如果缓存未过期，跳过网络请求
+      if (Date.now() - cached.timestamp < CACHE_TTL) {
+        setIsLoading(false);
+        return;
+      }
+    }
+
+    setIsLoading(true);
+
     try {
-      const resolutionsParam = selectedResolutions.length > 0 ? `&resolutions=${selectedResolutions.join(',')}` : '';
-      const seedParam = sortMode.startsWith('random') && randomSeed !== null ? `&seed=${randomSeed}` : '';
-      const likedParam = likedOnly ? '&liked=true' : '';
-      const modelBasesParam = selectedModelBases.length > 0 ? `&modelBases=${selectedModelBases.join(',')}` : '';
-      const stylesParam = selectedStyles.length > 0 ? `&styles=${selectedStyles.join(',')}` : '';
-
-      const url = `/api/images/list?page=${page}&limit=${limit}&search=${encodeURIComponent(debouncedSearch)}&sort=${sortMode}${resolutionsParam}${seedParam}${likedParam}${modelBasesParam}${stylesParam}`;
-
       const res = await fetch(url, { signal: controller.signal });
 
       if (!res.ok) {
@@ -114,6 +128,11 @@ export function useImages(options: UseImagesOptions = {}) {
       }
 
       const data: ApiResponse = await res.json();
+
+      // 缓存第一页数据
+      if (page === 1) {
+        imageCache.set(cacheKey, { data, timestamp: Date.now() });
+      }
 
       setTotalAssets(data.total);
 
@@ -146,7 +165,7 @@ export function useImages(options: UseImagesOptions = {}) {
         setIsLoading(false);
       }
     }
-  }, [page, debouncedSearch, sortMode, selectedResolutions, randomSeed, hasMore, limit, likedOnly, selectedModelBases, selectedStyles, refreshKey]);
+  }, [page, debouncedSearch, sortMode, selectedResolutions, hasMore, limit, likedOnly, selectedModelBases, selectedStyles, refreshKey]);
 
   // Trigger fetch
   useEffect(() => {
@@ -183,11 +202,18 @@ export function useImages(options: UseImagesOptions = {}) {
   // 注意：availableStyles 已移至独立的 useStyles Hook
   // 这样可以在应用启动时获取全局风格列表，而不是只从已加载的图片中计算
 
-  const shuffleImages = useCallback(() => {
-    const newSeed = Math.floor(Math.random() * 1000000);
-    setRandomSeed(newSeed);
+  const shuffleImages = useCallback(async () => {
+    // 调用后端 API 重新打乱随机顺序
+    try {
+      await fetch('/api/images/shuffle', { method: 'POST' });
+    } catch (e) {
+      console.error('Shuffle failed:', e);
+    }
+    // 清除缓存并刷新
+    imageCache.clear();
     setSortMode('random_shuffle');
-  }, []);
+    resetGallery();
+  }, [resetGallery]);
 
   const updateImage = useCallback((updatedImage: Image) => {
     setImages(prev => prev.map(img => img.id === updatedImage.id ? updatedImage : img));
@@ -268,16 +294,14 @@ export function useImages(options: UseImagesOptions = {}) {
 
   // Refetch from the beginning (used after upload)
   const refetch = useCallback(() => {
-    // 重置分页和加载状态，但不立即清空图片（保持旧数据显示直到新数据到达）
+    // 清除缓存
+    imageCache.clear();
+    // 重置分页和加载状态
     setPage(1);
     setHasMore(true);
     // 通过 refreshKey 强制触发重新加载
     setRefreshKey(k => k + 1);
-    // 随机模式下生成新种子以获取不同内容
-    if (sortMode.startsWith('random')) {
-      setRandomSeed(Math.floor(Math.random() * 1000000));
-    }
-  }, [sortMode]);
+  }, []);
 
   return {
     // Data
@@ -310,8 +334,6 @@ export function useImages(options: UseImagesOptions = {}) {
     // Sort
     sortMode,
     setSortMode,
-    randomSeed,
-    setRandomSeed,
     shuffleImages,
 
     // Actions

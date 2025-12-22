@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
 import {
-  query,
-  queryOne,
   queryAll,
   errorResponse,
   getErrorMessage,
@@ -21,7 +19,6 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || String(DEFAULT_PAGE_SIZE));
     const search = searchParams.get('search') || '';
     const sort = searchParams.get('sort') || 'newest';
-    const seed = searchParams.get('seed') || '0';  // 用于可重复的随机排序
     const resolutions = searchParams.get('resolutions') || '';
     const likedOnly = searchParams.get('liked') === 'true';
     const modelBases = searchParams.get('modelBases') || '';
@@ -105,23 +102,19 @@ export async function GET(request: Request) {
       baseQuery += ' WHERE ' + whereConditions.join(' AND ');
     }
 
-    // 查询总数
-    const countResult = await queryOne<{ total: string }>(`SELECT count(*) as total ${baseQuery}`, params);
-    const total = parseInt(countResult?.total || '0');
-    console.log(`[API List] Found Total: ${total}`);
-
-    // 排序
+    // 排序（使用预计算的 random_order 字段，支持索引）
     let orderBy = 'ORDER BY created_at DESC';
     if (sort === 'random' || sort === 'random_shuffle' || sort === 'random_block') {
-      // 使用 md5(id + seed) 实现可重复的伪随机排序，避免 ORDER BY RANDOM() 的全表扫描
-      orderBy = `ORDER BY md5(id::text || '${seed}')`;
+      orderBy = 'ORDER BY random_order';
     }
 
-    // 分页查询
-    const selectQuery = `SELECT * ${baseQuery} ${orderBy} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    // 合并查询：使用窗口函数一次获取数据和总数
+    const selectQuery = `SELECT *, COUNT(*) OVER() as total_count ${baseQuery} ${orderBy} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     params.push(limit, offset);
 
     const images = await queryAll(selectQuery, params);
+    const total = images.length > 0 ? parseInt(images[0].total_count || '0') : 0;
+    console.log(`[API List] Found Total: ${total}`);
 
     // 为每张图片生成预签名 URL
     const imagesWithUrls = images.map((img: { oss_key?: string; filepath?: string }) => {

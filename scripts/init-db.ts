@@ -54,7 +54,8 @@ async function initDatabase() {
         dominant_color TEXT,
         like_count INTEGER NOT NULL DEFAULT 0,
         favorite INTEGER NOT NULL DEFAULT 0,
-        deleted_at INTEGER DEFAULT NULL
+        deleted_at INTEGER DEFAULT NULL,
+        random_order DOUBLE PRECISION DEFAULT random()
       );
     `);
     console.log('✓ images 表已创建/确认存在');
@@ -68,6 +69,8 @@ async function initDatabase() {
       { name: 'idx_images_source', sql: 'CREATE INDEX IF NOT EXISTS idx_images_source ON images(source)' },
       { name: 'idx_images_style', sql: 'CREATE INDEX IF NOT EXISTS idx_images_style ON images(style)' },
       { name: 'idx_images_model_base', sql: 'CREATE INDEX IF NOT EXISTS idx_images_model_base ON images(model_base)' },
+      { name: 'idx_images_random_order', sql: 'CREATE INDEX IF NOT EXISTS idx_images_random_order ON images(random_order)' },
+      { name: 'idx_images_like_count', sql: 'CREATE INDEX IF NOT EXISTS idx_images_like_count ON images(like_count) WHERE like_count > 0' },
     ];
 
     for (const index of indexes) {
@@ -89,6 +92,7 @@ async function initDatabase() {
       { name: 'deleted_at', sql: 'ALTER TABLE images ADD COLUMN deleted_at INTEGER DEFAULT NULL' },
       { name: 'model_base', sql: 'ALTER TABLE images ADD COLUMN model_base TEXT' },
       { name: 'style_ref', sql: 'ALTER TABLE images ADD COLUMN style_ref TEXT' },
+      { name: 'random_order', sql: 'ALTER TABLE images ADD COLUMN random_order DOUBLE PRECISION DEFAULT random()' },
     ];
 
     for (const migration of migrations) {
@@ -97,6 +101,10 @@ async function initDatabase() {
         console.log(`✓ 已添加列: ${migration.name}`);
       }
     }
+
+    // 为已存在的 random_order 为 NULL 的记录填充随机值
+    await client.query('UPDATE images SET random_order = random() WHERE random_order IS NULL');
+    console.log('✓ random_order 字段已填充');
 
     console.log('\n数据库初始化成功！');
 
