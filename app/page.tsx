@@ -46,8 +46,6 @@ export default function Home() {
     // Sort
     sortMode,
     setSortMode,
-    randomSeed,
-    setRandomSeed,
     shuffleImages,
     updateImage,
     updateImages,
@@ -130,7 +128,7 @@ export default function Home() {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
     }
-  }, [debouncedSearch, sortMode, randomSeed]);
+  }, [debouncedSearch, sortMode]);
 
   // Sync selectedImage with images array (for all field updates)
   useEffect(() => {
@@ -365,7 +363,7 @@ export default function Home() {
         // Sort
         sortMode={sortMode}
         setSortMode={setSortMode}
-        setRandomSeed={setRandomSeed}
+        shuffleImages={shuffleImages}
         // Mobile
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}

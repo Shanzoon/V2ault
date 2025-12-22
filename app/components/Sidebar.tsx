@@ -47,7 +47,7 @@ interface SidebarProps {
   // Sort
   sortMode: SortMode;
   setSortMode: (mode: SortMode) => void;
-  setRandomSeed: (seed: number) => void;
+  shuffleImages: () => void;
 
   // Mobile
   isMobileMenuOpen: boolean;
@@ -82,7 +82,7 @@ export function Sidebar({
   setGridSize,
   sortMode,
   setSortMode,
-  setRandomSeed,
+  shuffleImages,
   isMobileMenuOpen,
   setIsMobileMenuOpen,
   onTitleClick,
@@ -164,7 +164,7 @@ export function Sidebar({
     setTimeout(() => setSortClickFeedback(false), 150);
     if (sortMode === 'date_desc') {
       setSortMode('random_shuffle');
-      setRandomSeed(Math.floor(Math.random() * 1000000));
+      shuffleImages();
     } else {
       setSortMode('date_desc');
     }
