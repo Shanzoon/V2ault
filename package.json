@@ -14,8 +14,11 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@alicloud/openapi-client": "^0.4.15",
+    "@alicloud/sts20150401": "^1.1.6",
     "ali-oss": "^6.23.0",
     "blurhash": "^2.0.5",
+    "browser-image-compression": "^2.0.2",
     "file-saver": "^2.0.5",
     "framer-motion": "^12.23.25",
     "glob": "^13.0.0",

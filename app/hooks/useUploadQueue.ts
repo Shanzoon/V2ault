@@ -1,9 +1,23 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import imageCompression from 'browser-image-compression';
+import OSS from 'ali-oss';
 
 // 并发数
 const CONCURRENCY = 4;
+// 重试次数
+const MAX_RETRIES = 3;
+
+// 压缩配置（可扩展为用户设置）
+const COMPRESSION_CONFIG = {
+  enabled: true,              // 是否启用压缩
+  maxSizeMB: 2,               // 最大文件大小 MB
+  maxWidthOrHeight: 2560,     // 最大宽高
+  useWebWorker: true,         // 使用 Web Worker
+  fileType: 'image/webp',     // 输出格式
+  initialQuality: 0.85,       // 压缩质量
+};
 
 export interface UploadTask {
   id: string;
@@ -16,7 +30,7 @@ export interface UploadTask {
     style: string;
     imported_at: string;
   };
-  status: 'pending' | 'uploading' | 'success' | 'error';
+  status: 'pending' | 'compressing' | 'uploading' | 'registering' | 'success' | 'error';
   error?: string;
 }
 
@@ -40,6 +54,104 @@ interface UseUploadQueueReturn {
   setIsVisible: (v: boolean) => void;
 }
 
+interface StsCredentials {
+  accessKeyId: string;
+  accessKeySecret: string;
+  securityToken: string;
+  expiration: string;
+}
+
+interface StsResponse {
+  success: boolean;
+  credentials: StsCredentials;
+  config: {
+    bucket: string;
+    region: string;
+    uploadPath: string;
+  };
+}
+
+// STS 凭证缓存
+let cachedSts: StsResponse | null = null;
+let stsExpireTime: number = 0;
+
+/**
+ * 获取 STS 凭证（带缓存）
+ */
+async function getStsCredentials(): Promise<StsResponse> {
+  // 提前 2 分钟刷新凭证
+  if (cachedSts && Date.now() < stsExpireTime - 120000) {
+    return cachedSts;
+  }
+
+  const response = await fetch('/api/oss/sts');
+  if (!response.ok) {
+    throw new Error('获取上传凭证失败');
+  }
+
+  const data: StsResponse = await response.json();
+  if (!data.success) {
+    throw new Error('获取上传凭证失败');
+  }
+
+  cachedSts = data;
+  stsExpireTime = new Date(data.credentials.expiration).getTime();
+  return data;
+}
+
+/**
+ * 生成 OSS 对象键名
+ */
+function generateOssKey(uploadPath: string, filename: string): string {
+  const ext = '.webp';
+  const baseName = filename.replace(/\.[^/.]+$/, '');
+  const cleanName = baseName.replace(/[^\w\u4e00-\u9fa5-]/g, '_').slice(0, 50);
+  const timestamp = Date.now();
+  const randomStr = Math.random().toString(36).substring(2, 8);
+  return `${uploadPath}${cleanName}_${timestamp}_${randomStr}${ext}`;
+}
+
+/**
+ * 压缩图片
+ */
+async function compressImage(file: File): Promise<File> {
+  if (!COMPRESSION_CONFIG.enabled) {
+    return file;
+  }
+
+  try {
+    const compressed = await imageCompression(file, {
+      maxSizeMB: COMPRESSION_CONFIG.maxSizeMB,
+      maxWidthOrHeight: COMPRESSION_CONFIG.maxWidthOrHeight,
+      useWebWorker: COMPRESSION_CONFIG.useWebWorker,
+      fileType: COMPRESSION_CONFIG.fileType,
+      initialQuality: COMPRESSION_CONFIG.initialQuality,
+    });
+    return compressed;
+  } catch (error) {
+    console.warn('[Compress] Failed, using original file:', error);
+    return file;
+  }
+}
+
+/**
+ * 获取图片尺寸
+ */
+function getImageDimensions(file: File): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      resolve({ width: img.width, height: img.height });
+      URL.revokeObjectURL(img.src);
+    };
+    img.onerror = () => {
+      reject(new Error('Failed to load image'));
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 export function useUploadQueue(onUploadComplete?: () => void): UseUploadQueueReturn {
   const [tasks, setTasks] = useState<UploadTask[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -53,58 +165,86 @@ export function useUploadQueue(onUploadComplete?: () => void): UseUploadQueueRet
   const taskQueueRef = useRef<UploadTask[]>([]);
   const processedCountRef = useRef(0);
 
-  // 保持回调函数的最新引用
   useEffect(() => {
     onUploadCompleteRef.current = onUploadComplete;
   }, [onUploadComplete]);
 
-  // 计算统计数据
   const completedCount = tasks.filter((t) => t.status === 'success').length;
   const failedCount = tasks.filter((t) => t.status === 'error').length;
   const totalCount = tasks.length;
 
-  // 上传单个文件
+  // 上传单个文件到 OSS（带重试）
   const uploadSingleFile = useCallback(
-    async (task: UploadTask, signal: AbortSignal): Promise<boolean> => {
-      const formData = new FormData();
-      formData.append('files', task.file);
-      formData.append(
-        'metadata',
-        JSON.stringify([
-          {
-            originalFilename: task.file.name,
-            title: task.metadata.title,
-            prompt: task.metadata.prompt,
-            model_base: task.metadata.model_base,
-            source: task.metadata.source,
-            style: task.metadata.style,
-            imported_at: task.metadata.imported_at,
-          },
-        ])
-      );
+    async (
+      task: UploadTask,
+      updateStatus: (status: UploadTask['status']) => void
+    ): Promise<boolean> => {
+      let lastError: Error | null = null;
 
-      try {
-        const response = await fetch('/api/images/upload', {
-          method: 'POST',
-          body: formData,
-          signal,
-        });
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          // 1. 压缩图片
+          updateStatus('compressing');
+          const compressedFile = await compressImage(task.file);
+          const dimensions = await getImageDimensions(compressedFile);
 
-        const result = await response.json();
+          // 2. 获取 STS 凭证
+          const sts = await getStsCredentials();
 
-        if (result.success && result.uploaded.length > 0) {
+          // 3. 创建 OSS 客户端
+          const ossClient = new OSS({
+            region: sts.config.region,
+            bucket: sts.config.bucket,
+            accessKeyId: sts.credentials.accessKeyId,
+            accessKeySecret: sts.credentials.accessKeySecret,
+            stsToken: sts.credentials.securityToken,
+          });
+
+          // 4. 上传到 OSS
+          updateStatus('uploading');
+          const ossKey = generateOssKey(sts.config.uploadPath, task.metadata.title || task.file.name);
+          await ossClient.put(ossKey, compressedFile);
+
+          // 5. 注册到数据库
+          updateStatus('registering');
+          const registerResponse = await fetch('/api/images/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              images: [
+                {
+                  ossKey,
+                  filename: task.metadata.title || task.file.name,
+                  width: dimensions.width,
+                  height: dimensions.height,
+                  filesize: compressedFile.size,
+                  metadata: {
+                    prompt: task.metadata.prompt,
+                    model_base: task.metadata.model_base,
+                    source: task.metadata.source,
+                    style: task.metadata.style,
+                    imported_at: task.metadata.imported_at,
+                  },
+                },
+              ],
+            }),
+          });
+
+          const registerResult = await registerResponse.json();
+          if (!registerResult.success || registerResult.failed?.length > 0) {
+            throw new Error(registerResult.failed?.[0]?.error || '注册失败');
+          }
+
           return true;
-        } else if (result.failed && result.failed.length > 0) {
-          throw new Error(result.failed[0].error);
-        } else {
-          throw new Error(result.error || '上传失败');
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error('未知错误');
+          if (attempt < MAX_RETRIES) {
+            await new Promise((r) => setTimeout(r, 1000 * attempt));
+          }
         }
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          throw error;
-        }
-        throw error;
       }
+
+      throw lastError || new Error('上传失败');
     },
     []
   );
@@ -120,45 +260,31 @@ export function useUploadQueue(onUploadComplete?: () => void): UseUploadQueueRet
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
-      // 初始化任务队列
       taskQueueRef.current = [...tasksToUpload];
       processedCountRef.current = 0;
 
-      // 并发 worker 函数
       const uploadWorker = async () => {
         while (true) {
           if (controller.signal.aborted) break;
 
-          // 从队列中获取下一个任务
           const task = taskQueueRef.current.shift();
           if (!task) break;
 
-          // 更新任务状态为 uploading
-          setTasks((prev) =>
-            prev.map((t) => (t.id === task.id ? { ...t, status: 'uploading' as const } : t))
-          );
-
-          // 更新进度指示
           processedCountRef.current++;
           setCurrentIndex(processedCountRef.current);
 
-          try {
-            await uploadSingleFile(task, controller.signal);
+          const updateStatus = (status: UploadTask['status']) => {
+            setTasks((prev) =>
+              prev.map((t) => (t.id === task.id ? { ...t, status } : t))
+            );
+          };
 
-            // 成功
+          try {
+            await uploadSingleFile(task, updateStatus);
             setTasks((prev) =>
               prev.map((t) => (t.id === task.id ? { ...t, status: 'success' as const } : t))
             );
           } catch (error) {
-            if (error instanceof Error && error.name === 'AbortError') {
-              // 用户取消，将当前任务标记回 pending
-              setTasks((prev) =>
-                prev.map((t) => (t.id === task.id ? { ...t, status: 'pending' as const } : t))
-              );
-              break;
-            }
-
-            // 其他错误
             const errorMessage = error instanceof Error ? error.message : '未知错误';
             setTasks((prev) =>
               prev.map((t) =>
@@ -169,7 +295,6 @@ export function useUploadQueue(onUploadComplete?: () => void): UseUploadQueueRet
         }
       };
 
-      // 启动 N 个并发 worker
       await Promise.all(
         Array(Math.min(CONCURRENCY, tasksToUpload.length))
           .fill(null)
@@ -180,7 +305,6 @@ export function useUploadQueue(onUploadComplete?: () => void): UseUploadQueueRet
       setIsUploading(false);
       abortControllerRef.current = null;
 
-      // 上传完成回调
       if (onUploadCompleteRef.current) {
         onUploadCompleteRef.current();
       }
@@ -188,27 +312,22 @@ export function useUploadQueue(onUploadComplete?: () => void): UseUploadQueueRet
     [uploadSingleFile]
   );
 
-  // 添加任务到队列并自动开始上传
   const addTasks = useCallback(
     (newTasks: UploadTask[]) => {
       setTasks((prev) => [...prev, ...newTasks]);
       setIsVisible(true);
-      // 直接传递任务数组，避免闭包问题
       processUpload(newTasks);
     },
     [processUpload]
   );
 
-  // 取消上传
   const cancelUpload = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      // 清空待处理队列
       taskQueueRef.current = [];
     }
   }, []);
 
-  // 清空队列
   const clearQueue = useCallback(() => {
     if (isUploadingRef.current) {
       cancelUpload();

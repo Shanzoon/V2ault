@@ -20,6 +20,11 @@
   like_count?: number;
   favorite?: number;
   deleted_at?: number | null;  // 软删除时间戳，null 表示未删除
+  // 预签名 URL（由列表 API 生成）
+  urls?: {
+    small: string;   // 600px 缩略图
+    large: string;   // 1600px 大图
+  };
 }
 
 export interface ApiResponse {

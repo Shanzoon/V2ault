@@ -107,12 +107,12 @@ cd V2ault
 pnpm install
 
 # 复制环境变量配置
-cp .env.local.example .env.local
+cp .env.local.example .env
 ```
 
 ### 配置
 
-编辑 `.env.local` 文件：
+编辑 `.env` 文件：
 
 ```bash
 # PostgreSQL 数据库连接字符串

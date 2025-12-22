@@ -58,10 +58,9 @@ export const ImageCard = memo(function ImageCard({
     aspectClass = 'aspect-[1/2]';
   }
 
-  // Progressive Loading URLs
-  const tinyUrl = `/api/image/${img.id}?w=50`;
-  const smallUrl = `/api/image/${img.id}?w=600`;
-  const largeUrl = `/api/image/${img.id}?w=1600`;
+  // 使用预签名 URL（如果有），否则回退到旧的 API 方式
+  const smallUrl = img.urls?.small || `/api/image/${img.id}?w=600`;
+  const largeUrl = img.urls?.large || `/api/image/${img.id}?w=1600`;
 
   const [smallLoaded, setSmallLoaded] = useState(false);
   const [largeLoaded, setLargeLoaded] = useState(false);
@@ -191,21 +190,11 @@ export const ImageCard = memo(function ImageCard({
         className={`w-full h-full relative ${aspectClass}`}
         style={{ backgroundColor: img.dominant_color || '#1f2937' }}
       >
-        {/* Layer 1: Placeholder (Blurhash or TinyUrl) */}
-        {img.blurhash ? (
+        {/* Layer 1: Placeholder (Blurhash or dominant color) */}
+        {img.blurhash && (
           <div className={`absolute inset-0 w-full h-full transition-opacity duration-500 ${smallLoaded ? 'opacity-0' : 'opacity-100'}`}>
             <BlurhashCanvas hash={img.blurhash} />
           </div>
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={tinyUrl}
-            alt=""
-            className={`absolute inset-0 w-full h-full object-cover blur-xl scale-110 opacity-50 transition-opacity duration-500 ${
-              smallLoaded ? 'opacity-0' : 'opacity-50'
-            }`}
-            aria-hidden="true"
-          />
         )}
 
         {/* Layer 2: Small Image (Base) */}

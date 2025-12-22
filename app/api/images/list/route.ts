@@ -5,6 +5,7 @@ import {
   queryAll,
   errorResponse,
   getErrorMessage,
+  getProcessedImageUrl,
   RESOLUTION_THRESHOLDS,
   DEFAULT_PAGE_SIZE,
   DatabaseError,
@@ -20,6 +21,7 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || String(DEFAULT_PAGE_SIZE));
     const search = searchParams.get('search') || '';
     const sort = searchParams.get('sort') || 'newest';
+    const seed = searchParams.get('seed') || '0';  // 用于可重复的随机排序
     const resolutions = searchParams.get('resolutions') || '';
     const likedOnly = searchParams.get('liked') === 'true';
     const modelBases = searchParams.get('modelBases') || '';
@@ -111,7 +113,8 @@ export async function GET(request: Request) {
     // 排序
     let orderBy = 'ORDER BY created_at DESC';
     if (sort === 'random' || sort === 'random_shuffle' || sort === 'random_block') {
-      orderBy = 'ORDER BY RANDOM()';
+      // 使用 md5(id + seed) 实现可重复的伪随机排序，避免 ORDER BY RANDOM() 的全表扫描
+      orderBy = `ORDER BY md5(id::text || '${seed}')`;
     }
 
     // 分页查询
@@ -120,8 +123,21 @@ export async function GET(request: Request) {
 
     const images = await queryAll(selectQuery, params);
 
+    // 为每张图片生成预签名 URL
+    const imagesWithUrls = images.map((img: { oss_key?: string; filepath?: string }) => {
+      const ossKey = img.oss_key || img.filepath;
+      if (!ossKey) return img;
+      return {
+        ...img,
+        urls: {
+          small: getProcessedImageUrl(ossKey, 600, 80),
+          large: getProcessedImageUrl(ossKey, 1600, 85),
+        },
+      };
+    });
+
     return NextResponse.json({
-      images,
+      images: imagesWithUrls,
       total,
       page,
       totalPages: Math.ceil(total / limit),

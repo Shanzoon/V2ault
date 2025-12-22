@@ -147,9 +147,9 @@ export async function POST(request: NextRequest) {
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        // 使用 sharp 处理图片并转换为 WebP 无损格式
+        // 使用 sharp 处理图片并转换为 WebP 有损格式（quality 90 视觉几乎无损，但处理更快、文件更小）
         const processedImage = await sharp(buffer)
-          .webp({ lossless: true })
+          .webp({ quality: 90 })
           .toBuffer();
 
         // 获取图片尺寸
@@ -164,9 +164,11 @@ export async function POST(request: NextRequest) {
         const ossResult = await uploadToOss(ossKey, processedImage, 'image/webp');
         console.log(`[Upload] Uploaded to OSS: ${ossKey} (${width}x${height})`);
 
-        // 计算 blurhash 和 dominant_color
-        const blurhash = await calculateBlurhash(processedImage);
-        const dominant_color = await getDominantColor(processedImage);
+        // 并行计算 blurhash 和 dominant_color
+        const [blurhash, dominant_color] = await Promise.all([
+          calculateBlurhash(processedImage),
+          getDominantColor(processedImage),
+        ]);
 
         // 写入数据库
         const displayName = fileMeta.title || originalFilename;
