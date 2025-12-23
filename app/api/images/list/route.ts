@@ -21,8 +21,9 @@ export async function GET(request: Request) {
     const sort = searchParams.get('sort') || 'newest';
     const resolutions = searchParams.get('resolutions') || '';
     const likedOnly = searchParams.get('liked') === 'true';
-    const modelBases = searchParams.get('modelBases') || '';
-    const styles = searchParams.get('styles') || '';
+    // 单选参数
+    const modelBase = searchParams.get('modelBase') || '';
+    const style = searchParams.get('style') || '';
 
     const offset = (page - 1) * limit;
 
@@ -77,24 +78,18 @@ export async function GET(request: Request) {
       whereConditions.push('like_count > 0');
     }
 
-    // Model Base 筛选
-    if (modelBases) {
-      const baseList = modelBases.split(',').map(b => b.trim()).filter(Boolean);
-      if (baseList.length > 0) {
-        const placeholders = baseList.map(() => `$${paramIndex++}`).join(',');
-        whereConditions.push(`model_base IN (${placeholders})`);
-        params.push(...baseList);
-      }
+    // Model Base 筛选（单选）
+    if (modelBase) {
+      whereConditions.push(`model_base = $${paramIndex}`);
+      params.push(modelBase);
+      paramIndex++;
     }
 
-    // Style 筛选
-    if (styles) {
-      const styleList = styles.split(',').map(s => s.trim()).filter(Boolean);
-      if (styleList.length > 0) {
-        const placeholders = styleList.map(() => `$${paramIndex++}`).join(',');
-        whereConditions.push(`style IN (${placeholders})`);
-        params.push(...styleList);
-      }
+    // Style 筛选（单选）
+    if (style) {
+      whereConditions.push(`style = $${paramIndex}`);
+      params.push(style);
+      paramIndex++;
     }
 
     // 组合 WHERE 子句

@@ -20,6 +20,8 @@ interface ImageGridProps {
   isAdmin: boolean;
   loadMoreRef: (node?: Element | null) => void;
   onCardRectsChange?: (rects: Map<number, DOMRect>) => void;
+  // 空状态判断
+  hasFilters?: boolean;
 }
 
 export function ImageGrid({
@@ -37,6 +39,7 @@ export function ImageGrid({
   isAdmin,
   loadMoreRef,
   onCardRectsChange,
+  hasFilters = false,
 }: ImageGridProps) {
   // 卡片 ref 映射
   const cardRefsMap = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -122,6 +125,24 @@ export function ImageGrid({
               className="relative border border-orange-300/40 overflow-hidden animate-pulse col-span-1 row-span-1 aspect-square rounded-xl"
             />
           ))}
+        </div>
+      ) : !isLoading && images.length === 0 ? (
+        /* 空状态 */
+        <div className="w-full flex flex-col items-center justify-center py-32 px-4">
+          <div className="w-20 h-20 mb-6 rounded-full bg-white/5 flex items-center justify-center">
+            <svg className="w-10 h-10 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-medium text-gray-400 mb-2">
+            {hasFilters ? '没有匹配的图片' : '暂无图片'}
+          </h3>
+          <p className="text-sm text-gray-600 text-center max-w-xs">
+            {hasFilters
+              ? '尝试调整筛选条件或搜索关键词'
+              : '上传一些图片开始使用吧'
+            }
+          </p>
         </div>
       ) : (
         <div className={`w-full mx-auto md:ml-[80px]  // 仅md及以上屏幕加80px左外边距，手机端无

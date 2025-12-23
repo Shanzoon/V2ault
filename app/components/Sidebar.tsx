@@ -1,9 +1,9 @@
 ﻿'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, X, Grid, LayoutGrid, Maximize, Shuffle, Clock, Check, Upload, Lock, LogOut, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { Search, X, Grid, LayoutGrid, Maximize, Shuffle, Clock, Check, Upload, Lock, LogOut, Trash2, HelpCircle } from 'lucide-react';
 import type { GridSize, SortMode } from '../types';
 import { MODEL_BASES, STYLE_SOURCES } from '../lib/constants';
 import type { StyleSource } from '../lib/constants';
@@ -24,18 +24,16 @@ interface SidebarProps {
   // Search & Filter
   search: string;
   setSearch: (value: string) => void;
-  selectedResolutions: string[];
-  toggleResolution: (res: string) => void;
   likedOnly: boolean;
   setLikedOnly: (value: boolean) => void;
 
-  // Model Base Filter
-  selectedModelBases: string[];
-  toggleModelBase: (modelBase: string) => void;
+  // Model Base Filter (单选)
+  selectedModelBase: string | null;
+  selectModelBase: (modelBase: string | null) => void;
 
-  // Style Filter
-  selectedStyles: string[];
-  toggleStyle: (style: string) => void;
+  // Style Filter (单选)
+  selectedStyle: string | null;
+  selectStyle: (style: string | null) => void;
   activeStyleTab: StyleSource;
   setActiveStyleTab: (tab: StyleSource) => void;
   availableStyles: AvailableStyles;
@@ -61,20 +59,24 @@ interface SidebarProps {
   isAdmin: boolean;
   onLogin: (password: string) => Promise<boolean>;
   onLogout: () => Promise<void>;
+
+  // 快捷键反馈回调注册
+  onRegisterFeedback?: (callbacks: { grid: () => void; shuffle: () => void }) => void;
+
+  // 帮助入口
+  onHelpClick?: () => void;
 }
 
 export function Sidebar({
   totalAssets,
   search,
   setSearch,
-  selectedResolutions,
-  toggleResolution,
   likedOnly,
   setLikedOnly,
-  selectedModelBases,
-  toggleModelBase,
-  selectedStyles,
-  toggleStyle,
+  selectedModelBase,
+  selectModelBase,
+  selectedStyle,
+  selectStyle,
   activeStyleTab,
   setActiveStyleTab,
   availableStyles,
@@ -90,6 +92,8 @@ export function Sidebar({
   isAdmin,
   onLogin,
   onLogout,
+  onRegisterFeedback,
+  onHelpClick,
 }: SidebarProps) {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [password, setPassword] = useState('');
@@ -100,37 +104,36 @@ export function Sidebar({
   const [gridClickFeedback, setGridClickFeedback] = useState(false);
   const [sortClickFeedback, setSortClickFeedback] = useState(false);
 
-  // 折叠面板状态
-  const [expandedSections, setExpandedSections] = useState({
-    modelBase: true,
-    style: true,
-    resolution: true,
-  });
+  // 使用 useMemo 优化 GridIcon 查找
+  const GridIcon = useMemo(() => GRID_SIZE_ICONS[gridSize], [gridSize]);
+  const isRandomMode = sortMode === 'random_shuffle' || sortMode === 'random_block';
 
-  const toggleSection = (section: keyof typeof expandedSections) => {
-    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  // 计算选中风格所属的大类
+  const selectedStyleSource = useMemo(() => {
+    if (!selectedStyle) return null;
+    for (const source of STYLE_SOURCES) {
+      if (availableStyles[source].includes(selectedStyle)) {
+        return source;
+      }
+    }
+    return null;
+  }, [selectedStyle, availableStyles]);
+
+  // 暴露视觉反馈方法供外部调用
+  const triggerGridFeedback = () => {
+    setGridClickFeedback(true);
+    setTimeout(() => setGridClickFeedback(false), 150);
   };
 
-  // 监听键盘快捷键，显示反馈
+  const triggerShuffleFeedback = () => {
+    setSortClickFeedback(true);
+    setTimeout(() => setSortClickFeedback(false), 150);
+  };
+
+  // 注册反馈回调
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // 如果正在输入框中，不触发反馈
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
-
-      if (e.key.toLowerCase() === 'q') {
-        setGridClickFeedback(true);
-        setTimeout(() => setGridClickFeedback(false), 150);
-      }
-      if (e.key.toLowerCase() === 'r') {
-        setSortClickFeedback(true);
-        setTimeout(() => setSortClickFeedback(false), 150);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    onRegisterFeedback?.({ grid: triggerGridFeedback, shuffle: triggerShuffleFeedback });
+  }, [onRegisterFeedback]);
 
   const handleLogin = async () => {
     if (!password.trim()) return;
@@ -169,9 +172,6 @@ export function Sidebar({
       setSortMode('date_desc');
     }
   };
-
-  const GridIcon = GRID_SIZE_ICONS[gridSize];
-  const isRandomMode = sortMode === 'random_shuffle' || sortMode === 'random_block';
 
   return (
     <>
@@ -214,6 +214,7 @@ export function Sidebar({
             <button
               onClick={onUploadClick}
               disabled={!isAdmin}
+              data-onboarding="upload"
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all ${
                 isAdmin
                   ? 'bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 text-white'
@@ -274,172 +275,88 @@ export function Sidebar({
             )}
           </div>
 
-          {/* Style Filter - 移到搜索框下方 */}
+          {/* Model Base Filter - 网格布局，每行3个 */}
           <div className="space-y-2">
-            <button
-              onClick={() => toggleSection('style')}
-              className="w-full flex items-center justify-between group"
-            >
-              <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] group-hover:text-gray-400 transition-colors">
-                Style
-                {selectedStyles.length > 0 && (
-                  <span className="ml-2 text-orange-400">({selectedStyles.length})</span>
-                )}
-              </h2>
-              {expandedSections.style ? (
-                <ChevronUp className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
-              )}
-            </button>
-            <AnimatePresence>
-              {expandedSections.style && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
+            <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">
+              Model Base
+              {selectedModelBase && <span className="ml-2 text-orange-400">· {selectedModelBase}</span>}
+            </h2>
+            <div className="grid grid-cols-3 gap-1.5 p-0.5 -m-0.5">
+              {MODEL_BASES.map((base) => (
+                <button
+                  key={base}
+                  onClick={() => selectModelBase(base)}
+                  className={`py-2 px-1 rounded-lg text-[10px] font-medium transition-all duration-200 text-center truncate ${
+                    selectedModelBase === base
+                      ? 'bg-orange-500/20 text-orange-400 ring-1 ring-orange-500/50'
+                      : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-300'
+                  }`}
+                  title={base}
                 >
-                  {/* Tab 栏 */}
-                  <div className="flex gap-1 p-1 bg-black/30 rounded-lg mt-2">
-                    {STYLE_SOURCES.map((source) => (
-                      <button
-                        key={source}
-                        onClick={() => setActiveStyleTab(source)}
-                        className={`flex-1 px-3 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${
-                          activeStyleTab === source
-                            ? 'bg-white/10 text-white'
-                            : 'text-gray-500 hover:text-gray-300'
-                        }`}
-                      >
-                        {source}
-                        {availableStyles[source].length > 0 && (
-                          <span className="ml-1 text-gray-500">
-                            {availableStyles[source].length}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
+                  {base}
+                </button>
+              ))}
+            </div>
+          </div>
 
-                  {/* 标签云 */}
-                  <div className="flex flex-wrap gap-2 pt-3 max-h-[200px] overflow-y-auto custom-scrollbar">
-                    {availableStyles[activeStyleTab].length > 0 ? (
-                      availableStyles[activeStyleTab].map((style) => (
-                        <button
-                          key={style}
-                          onClick={() => toggleStyle(style)}
-                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 ${
-                            selectedStyles.includes(style)
-                              ? 'bg-orange-500/80 text-white shadow-[0_0_10px_rgba(249,115,22,0.3)]'
-                              : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-300 border border-white/5'
-                          }`}
-                        >
-                          {style}
-                        </button>
-                      ))
-                    ) : (
-                      <p className="text-xs text-gray-600 italic">暂无 {activeStyleTab} 风格数据</p>
+          {/* Style Filter - 网格布局，每行2个 */}
+          <div className="space-y-2" data-onboarding="style">
+            <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em]">
+              Style
+              {selectedStyle && <span className="ml-2 text-orange-400">· {selectedStyle}</span>}
+            </h2>
+            {/* Tab 栏 */}
+            <div className="flex gap-1 p-1 bg-black/30 rounded-lg">
+              {STYLE_SOURCES.map((source) => {
+                const isActive = activeStyleTab === source;
+                const hasSelection = selectedStyleSource === source;
+                return (
+                  <button
+                    key={source}
+                    onClick={() => setActiveStyleTab(source)}
+                    className={`flex-1 px-2 py-1.5 rounded-md text-xs font-bold uppercase tracking-wide transition-all ${
+                      isActive
+                        ? hasSelection
+                          ? 'bg-orange-500/20 text-orange-400 ring-1 ring-orange-500/50'
+                          : 'bg-white/10 text-white'
+                        : hasSelection
+                          ? 'bg-orange-500/10 text-orange-400'
+                          : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    {source}
+                    {availableStyles[source].length > 0 && (
+                      <span className={`ml-1 text-[10px] ${hasSelection ? 'text-orange-400/70' : 'text-gray-500'}`}>
+                        {availableStyles[source].length}
+                      </span>
                     )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Model Base Filter */}
-          <div className="space-y-2">
-            <button
-              onClick={() => toggleSection('modelBase')}
-              className="w-full flex items-center justify-between group"
-            >
-              <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] group-hover:text-gray-400 transition-colors">
-                Model Base
-                {selectedModelBases.length > 0 && (
-                  <span className="ml-2 text-orange-400">({selectedModelBases.length})</span>
-                )}
-              </h2>
-              {expandedSections.modelBase ? (
-                <ChevronUp className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
+                  </button>
+                );
+              })}
+            </div>
+            {/* 网格布局 */}
+            <div className="grid grid-cols-2 gap-1.5 max-h-[240px] overflow-y-auto custom-scrollbar p-0.5 -m-0.5">
+              {availableStyles[activeStyleTab].length > 0 ? (
+                availableStyles[activeStyleTab].map((style) => (
+                  <button
+                    key={style}
+                    onClick={() => selectStyle(style)}
+                    className={`py-2 px-2 rounded-lg text-[11px] font-medium transition-all duration-200 text-center truncate ${
+                      selectedStyle === style
+                        ? 'bg-orange-500/20 text-orange-400 ring-1 ring-orange-500/50'
+                        : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-300'
+                    }`}
+                    title={style}
+                  >
+                    {style}
+                  </button>
+                ))
               ) : (
-                <ChevronDown className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
+                <p className="col-span-2 text-xs text-gray-600 italic py-4 text-center">
+                  暂无 {activeStyleTab} 风格数据
+                </p>
               )}
-            </button>
-            <AnimatePresence>
-              {expandedSections.modelBase && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {MODEL_BASES.map((base) => (
-                      <button
-                        key={base}
-                        onClick={() => toggleModelBase(base)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
-                          selectedModelBases.includes(base)
-                            ? 'bg-orange-500/80 text-white shadow-[0_0_10px_rgba(249,115,22,0.3)]'
-                            : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-300 border border-white/5'
-                        }`}
-                      >
-                        {base}
-                      </button>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Resolution Filter */}
-          <div className="space-y-2">
-            <button
-              onClick={() => toggleSection('resolution')}
-              className="w-full flex items-center justify-between group"
-            >
-              <h2 className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] group-hover:text-gray-400 transition-colors">
-                Resolution
-                {selectedResolutions.length > 0 && (
-                  <span className="ml-2 text-orange-400">({selectedResolutions.length})</span>
-                )}
-              </h2>
-              {expandedSections.resolution ? (
-                <ChevronUp className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
-              )}
-            </button>
-            <AnimatePresence>
-              {expandedSections.resolution && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {['medium', 'high', 'ultra'].map((res) => (
-                      <button
-                        key={res}
-                        onClick={() => toggleResolution(res)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-all duration-200 ${
-                          selectedResolutions.includes(res)
-                            ? 'bg-white/15 text-white shadow-[0_0_10px_rgba(255,255,255,0.1)]'
-                            : 'bg-white/5 text-gray-500 hover:bg-white/10 hover:text-gray-300 border border-white/5'
-                        }`}
-                      >
-                        {res}
-                      </button>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            </div>
           </div>
 
           {/* Liked Filter */}
@@ -505,6 +422,18 @@ export function Sidebar({
                 回收站
               </Link>
             </div>
+
+            {/* 分隔线 */}
+            <div className="w-px h-6 bg-white/10" />
+
+            {/* 帮助入口 */}
+            <button
+              onClick={onHelpClick}
+              className="p-2 text-gray-500 hover:text-gray-300 rounded-lg transition-colors hover:bg-white/5"
+              title="帮助"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </aside>

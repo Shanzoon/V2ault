@@ -40,9 +40,13 @@ export const MODEL_BASES = [
 // 风格大类选项
 export const STYLE_SOURCES = ['2D', '3D', 'Real'] as const;
 
+// 分辨率筛选选项
+export const RESOLUTIONS = ['medium', 'high', 'ultra'] as const;
+
 // 类型导出
 export type ModelBase = typeof MODEL_BASES[number];
 export type StyleSource = typeof STYLE_SOURCES[number];
+export type Resolution = typeof RESOLUTIONS[number];
 
 // ============================================
 // 多选功能常量

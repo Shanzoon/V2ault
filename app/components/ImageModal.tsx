@@ -74,12 +74,6 @@ export function ImageModal({
     if (images.length < prevImagesLengthRef.current) {
       // 检测到图片被删除，立即设置标志
       isDeletingRef.current = true;
-      // 100ms 后重置，让 Swiper 完成内部更新
-      const timer = setTimeout(() => {
-        isDeletingRef.current = false;
-      }, 100);
-      prevImagesLengthRef.current = images.length;
-      return () => clearTimeout(timer);
     }
     prevImagesLengthRef.current = images.length;
   }, [images.length]);
@@ -91,6 +85,13 @@ export function ImageModal({
     const targetIndex = images.findIndex(img => img.id === selectedImage.id);
     if (targetIndex !== -1 && swiperRef.current.activeIndex !== targetIndex) {
       swiperRef.current.slideTo(targetIndex, 0);
+    }
+    // slideTo 完成后重置删除标志
+    if (isDeletingRef.current) {
+      const timer = setTimeout(() => {
+        isDeletingRef.current = false;
+      }, 50);
+      return () => clearTimeout(timer);
     }
   }, [selectedImage, images]);
 

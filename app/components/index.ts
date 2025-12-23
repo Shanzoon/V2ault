@@ -17,3 +17,5 @@ export { TrashImageCard } from './TrashImageCard';
 export { TrashImageGrid } from './TrashImageGrid';
 export { TrashActionBar } from './TrashActionBar';
 export { EmptyTrashConfirmModal } from './EmptyTrashConfirmModal';
+export { KeyboardHelpModal } from './KeyboardHelpModal';
+export { OnboardingGuide, resetOnboarding, isOnboardingCompleted } from './OnboardingGuide';

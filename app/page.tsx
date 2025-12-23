@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, Suspense } from 'react';
 import { toast } from 'sonner';
 
 import type { Image, GridSize } from './types';
@@ -17,9 +17,12 @@ import {
   GlobalDropZone,
   SelectionBox,
   SelectionActionBar,
+  KeyboardHelpModal,
+  OnboardingGuide,
+  resetOnboarding,
 } from './components';
 
-export default function Home() {
+function HomeContent() {
   // Data & Filter Hooks
   const {
     images,
@@ -31,16 +34,14 @@ export default function Home() {
     search,
     debouncedSearch,
     setSearch,
-    selectedResolutions,
-    toggleResolution,
     likedOnly,
     setLikedOnly,
-    // Model Base Filter
-    selectedModelBases,
-    toggleModelBase,
-    // Style Filter
-    selectedStyles,
-    toggleStyle,
+    // Model Base Filter (单选)
+    selectedModelBase,
+    selectModelBase,
+    // Style Filter (单选)
+    selectedStyle,
+    selectStyle,
     activeStyleTab,
     setActiveStyleTab,
     // Sort
@@ -95,6 +96,18 @@ export default function Home() {
 
   // Refs
   const scrollContainerRef = useRef<HTMLElement>(null);
+
+  // Onboarding State
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // 首次访问自动触发引导
+  useEffect(() => {
+    const completed = localStorage.getItem('v2ault_onboarding_completed');
+    if (!completed) {
+      const timer = setTimeout(() => setShowOnboarding(true), 800);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Box Selection Hook (框选)
   const boxSelectionEnabled = !isUploadModalOpen && !selectedImage;
@@ -297,8 +310,17 @@ export default function Home() {
     }
   }, [selectedImage, images, removeImage]);
 
+  // 快捷键反馈回调
+  const [feedbackCallbacks, setFeedbackCallbacks] = useState<{ grid: () => void; shuffle: () => void } | null>(null);
+
+  // 帮助入口处理
+  const handleHelpClick = useCallback(() => {
+    resetOnboarding();
+    setShowOnboarding(true);
+  }, []);
+
   // Keyboard Shortcuts
-  useKeyboardShortcuts({
+  const { isHelpOpen, setIsHelpOpen } = useKeyboardShortcuts({
     selectedImage,
     isFullscreen,
     isEditingPrompt: false,
@@ -306,15 +328,22 @@ export default function Home() {
     selectedImageIds,
     images,
     gridSize,
+    activeStyleTab,
+    availableStyles,
+    selectedStyle,
     setGridSize,
     setIsFullscreen,
     setSelectedImage,
     setIsEditingPrompt: () => {},
     setIsSelectionMode,
+    setActiveStyleTab,
+    selectStyle,
     clearSelection,
     onBatchDelete: handleBatchDelete,
     onSingleDelete: handleSingleDelete,
     onTitleClick: handleTitleClick,
+    onGridKeyPress: feedbackCallbacks?.grid,
+    onShuffleKeyPress: feedbackCallbacks?.shuffle,
   });
 
   return (
@@ -344,16 +373,14 @@ export default function Home() {
         totalAssets={totalAssets}
         search={search}
         setSearch={setSearch}
-        selectedResolutions={selectedResolutions}
-        toggleResolution={toggleResolution}
         likedOnly={likedOnly}
         setLikedOnly={setLikedOnly}
-        // Model Base Filter
-        selectedModelBases={selectedModelBases}
-        toggleModelBase={toggleModelBase}
-        // Style Filter
-        selectedStyles={selectedStyles}
-        toggleStyle={toggleStyle}
+        // Model Base Filter (单选)
+        selectedModelBase={selectedModelBase}
+        selectModelBase={selectModelBase}
+        // Style Filter (单选)
+        selectedStyle={selectedStyle}
+        selectStyle={selectStyle}
         activeStyleTab={activeStyleTab}
         setActiveStyleTab={setActiveStyleTab}
         availableStyles={availableStyles}
@@ -374,6 +401,8 @@ export default function Home() {
         isAdmin={isAdmin}
         onLogin={login}
         onLogout={logout}
+        onRegisterFeedback={setFeedbackCallbacks}
+        onHelpClick={handleHelpClick}
       />
 
       {/* Main Content */}
@@ -401,6 +430,7 @@ export default function Home() {
               isAdmin={isAdmin}
               loadMoreRef={loadMoreRef}
               onCardRectsChange={setCardRects}
+              hasFilters={!!(search || selectedModelBase || selectedStyle || likedOnly)}
             />
           )}
         </div>
@@ -466,6 +496,51 @@ export default function Home() {
         }}
         availableStyles={availableStyles}
       />
+
+      {/* Keyboard Help Modal */}
+      <KeyboardHelpModal
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
+        hideBackdrop={showOnboarding}
+      />
+
+      {/* Onboarding Guide */}
+      {showOnboarding && (
+        <OnboardingGuide
+          onComplete={() => {
+            setShowOnboarding(false);
+            setIsHelpOpen(false);
+          }}
+          onShowShortcuts={() => setIsHelpOpen(true)}
+          isShortcutsOpen={isHelpOpen}
+        />
+      )}
     </div>
+  );
+}
+
+// 加载骨架屏
+function LoadingSkeleton() {
+  return (
+    <div className="flex h-screen overflow-hidden text-gray-200 font-sans">
+      <div className="flex-1 h-full overflow-y-auto p-4 md:p-10 lg:p-12">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-1">
+          {Array.from({ length: 18 }).map((_, i) => (
+            <div
+              key={i}
+              className="relative border border-orange-300/40 overflow-hidden animate-pulse aspect-square rounded-xl"
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <HomeContent />
+    </Suspense>
   );
 }

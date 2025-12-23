@@ -3,8 +3,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useInView } from 'react-intersection-observer';
 import { useDebounce } from 'use-debounce';
+import { useSearchParams } from 'next/navigation';
 import type { Image, ApiResponse, SortMode } from '../types';
 import type { StyleSource } from '../lib/constants';
+import { STYLE_SOURCES } from '../lib/constants';
 
 // 错误类型定义
 export interface ApiError {
@@ -29,6 +31,7 @@ interface UseImagesOptions {
 
 export function useImages(options: UseImagesOptions = {}) {
   const { limit = 50 } = options;
+  const searchParams = useSearchParams();
 
   const [images, setImages] = useState<Image[]>([]);
   const [totalAssets, setTotalAssets] = useState(0);
@@ -37,20 +40,43 @@ export function useImages(options: UseImagesOptions = {}) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
 
-  const [search, setSearch] = useState('');
+  // 从 URL 参数初始化筛选状态
+  const [search, setSearch] = useState(() => searchParams.get('q') || '');
   const [debouncedSearch] = useDebounce(search, 500);
 
   const [sortMode, setSortMode] = useState<SortMode>('random_shuffle');
-  const [selectedResolutions, setSelectedResolutions] = useState<string[]>([]);
-  const [likedOnly, setLikedOnly] = useState(false);
+  const [likedOnly, setLikedOnly] = useState(() => searchParams.get('liked') === '1');
 
   // 刷新触发器（用于强制重新加载）
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // 新增筛选状态
-  const [selectedModelBases, setSelectedModelBases] = useState<string[]>([]);
-  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
-  const [activeStyleTab, setActiveStyleTab] = useState<StyleSource>('2D');
+  // 筛选状态（单选）- 从 URL 参数初始化
+  const [selectedModelBase, setSelectedModelBase] = useState<string | null>(
+    () => searchParams.get('model') || null
+  );
+  const [selectedStyle, setSelectedStyle] = useState<string | null>(
+    () => searchParams.get('style') || null
+  );
+  const [activeStyleTab, setActiveStyleTab] = useState<StyleSource>(() => {
+    const tab = searchParams.get('tab');
+    return (tab && STYLE_SOURCES.includes(tab as StyleSource)) ? tab as StyleSource : '2D';
+  });
+
+  // 同步筛选状态到 URL
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (debouncedSearch) params.set('q', debouncedSearch);
+    if (selectedModelBase) params.set('model', selectedModelBase);
+    if (selectedStyle) params.set('style', selectedStyle);
+    if (activeStyleTab !== '2D') params.set('tab', activeStyleTab);
+    if (likedOnly) params.set('liked', '1');
+
+    const queryString = params.toString();
+    const newUrl = queryString ? `?${queryString}` : window.location.pathname;
+
+    // 使用 replaceState 避免产生历史记录
+    window.history.replaceState(null, '', newUrl);
+  }, [debouncedSearch, selectedModelBase, selectedStyle, activeStyleTab, likedOnly]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -69,7 +95,7 @@ export function useImages(options: UseImagesOptions = {}) {
   // Listen for filter changes
   useEffect(() => {
     resetGallery();
-  }, [debouncedSearch, selectedResolutions, sortMode, likedOnly, selectedModelBases, selectedStyles, resetGallery]);
+  }, [debouncedSearch, sortMode, likedOnly, selectedModelBase, selectedStyle, resetGallery]);
 
   // Fetch Logic with SWR-style caching
   const fetchImages = useCallback(async () => {
@@ -86,11 +112,10 @@ export function useImages(options: UseImagesOptions = {}) {
       setError(null);
     }
 
-    const resolutionsParam = selectedResolutions.length > 0 ? `&resolutions=${selectedResolutions.join(',')}` : '';
     const likedParam = likedOnly ? '&liked=true' : '';
-    const modelBasesParam = selectedModelBases.length > 0 ? `&modelBases=${selectedModelBases.join(',')}` : '';
-    const stylesParam = selectedStyles.length > 0 ? `&styles=${selectedStyles.join(',')}` : '';
-    const url = `/api/images/list?page=${page}&limit=${limit}&search=${encodeURIComponent(debouncedSearch)}&sort=${sortMode}${resolutionsParam}${likedParam}${modelBasesParam}${stylesParam}`;
+    const modelBaseParam = selectedModelBase ? `&modelBase=${encodeURIComponent(selectedModelBase)}` : '';
+    const styleParam = selectedStyle ? `&style=${encodeURIComponent(selectedStyle)}` : '';
+    const url = `/api/images/list?page=${page}&limit=${limit}&search=${encodeURIComponent(debouncedSearch)}&sort=${sortMode}${likedParam}${modelBaseParam}${styleParam}`;
 
     // SWR: 先返回缓存数据（stale）
     const cacheKey = url;
@@ -165,7 +190,7 @@ export function useImages(options: UseImagesOptions = {}) {
         setIsLoading(false);
       }
     }
-  }, [page, debouncedSearch, sortMode, selectedResolutions, hasMore, limit, likedOnly, selectedModelBases, selectedStyles, refreshKey]);
+  }, [page, debouncedSearch, sortMode, hasMore, limit, likedOnly, selectedModelBase, selectedStyle, refreshKey]);
 
   // Trigger fetch
   useEffect(() => {
@@ -179,24 +204,14 @@ export function useImages(options: UseImagesOptions = {}) {
     }
   }, [inView, isLoading, hasMore]);
 
-  const toggleResolution = useCallback((res: string) => {
-    setSelectedResolutions(prev =>
-      prev.includes(res) ? prev.filter(r => r !== res) : [...prev, res]
-    );
+  // 切换模型基底（单选，再次点击取消）
+  const selectModelBase = useCallback((modelBase: string | null) => {
+    setSelectedModelBase(prev => prev === modelBase ? null : modelBase);
   }, []);
 
-  // 切换模型基底选中状态
-  const toggleModelBase = useCallback((modelBase: string) => {
-    setSelectedModelBases(prev =>
-      prev.includes(modelBase) ? prev.filter(m => m !== modelBase) : [...prev, modelBase]
-    );
-  }, []);
-
-  // 切换风格选中状态
-  const toggleStyle = useCallback((style: string) => {
-    setSelectedStyles(prev =>
-      prev.includes(style) ? prev.filter(s => s !== style) : [...prev, style]
-    );
+  // 切换风格（单选，再次点击取消）
+  const selectStyle = useCallback((style: string | null) => {
+    setSelectedStyle(prev => prev === style ? null : style);
   }, []);
 
   // 注意：availableStyles 已移至独立的 useStyles Hook
@@ -316,18 +331,16 @@ export function useImages(options: UseImagesOptions = {}) {
     search,
     debouncedSearch,
     setSearch,
-    selectedResolutions,
-    toggleResolution,
     likedOnly,
     setLikedOnly,
 
-    // Model Base Filter
-    selectedModelBases,
-    toggleModelBase,
+    // Model Base Filter (单选)
+    selectedModelBase,
+    selectModelBase,
 
-    // Style Filter
-    selectedStyles,
-    toggleStyle,
+    // Style Filter (单选)
+    selectedStyle,
+    selectStyle,
     activeStyleTab,
     setActiveStyleTab,
 
